@@ -7,23 +7,25 @@ import {
   Upload, Tag, FileText, ChevronRight, Filter, BarChart2,
   Radio, User, UserCheck
 } from 'lucide-react'
+import { supabase } from './lib/supabase.js'
 
 const CHART_COLORS = ['#7B6EF6', '#34D9B3', '#F5C243', '#3B9EFF', '#F07A6E', '#A89BF8', '#22c97a', '#FF8C69']
 import './App.css'
 
-const STORAGE_KEY = 'manual_test_tracker_v1'
-
+// GitHub config stays in localStorage (contains sensitive tokens)
+const GITHUB_CONFIG_KEY = 'beacon_github_config'
 const DEFAULT_GITHUB_CONFIG = { url: '', branch: 'main', file: '', folders: '', token: '', mode: 'folders' }
 
-function loadState() {
+function loadGithubConfig() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { releases: [], githubConfig: { ...DEFAULT_GITHUB_CONFIG } }
-    const s = JSON.parse(raw)
-    // Migrate old config that may not have folders/mode fields
-    s.githubConfig = { ...DEFAULT_GITHUB_CONFIG, ...s.githubConfig }
-    return s
-  } catch { return { releases: [], githubConfig: { ...DEFAULT_GITHUB_CONFIG } } }
+    const raw = localStorage.getItem(GITHUB_CONFIG_KEY)
+    if (!raw) return { ...DEFAULT_GITHUB_CONFIG }
+    return { ...DEFAULT_GITHUB_CONFIG, ...JSON.parse(raw) }
+  } catch { return { ...DEFAULT_GITHUB_CONFIG } }
+}
+
+function saveGithubConfig(cfg) {
+  localStorage.setItem(GITHUB_CONFIG_KEY, JSON.stringify(cfg))
 }
 
 // Parse owner + repo from a GitHub URL
@@ -31,10 +33,6 @@ function parseGithubRepo(url) {
   const m = url.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\s*$/)
   if (!m) throw new Error('Cannot parse GitHub repo URL — use https://github.com/owner/repo')
   return { owner: m[1], repo: m[2].replace(/\/$/, '') }
-}
-
-function saveState(state) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
 }
 
 const STATUS_CONFIG = {
@@ -123,35 +121,76 @@ function LabelChips({ labels, max = 0 }) {
 
 // ── Root App ───────────────────────────────────────────────────────────────────
 export default function App() {
-  const [state, setState]             = useState(loadState)
-  const [activeView, setActiveView]   = useState('releases')
+  const [releases, setReleases]               = useState([])
+  const [githubConfig, setGithubConfig]       = useState(loadGithubConfig)
+  const [dbLoading, setDbLoading]             = useState(true)
+  const [activeView, setActiveView]           = useState('releases')
   const [activeReleaseId, setActiveReleaseId] = useState(null)
-  const [testCases, setTestCases]     = useState([])
-  const [csvSources, setCsvSources]   = useState([])
-  const [loadingCsv, setLoadingCsv]   = useState(false)
-  const [loadProgress, setLoadProgress] = useState('')   // e.g. "Loading adyen_direct_intergration… (2/4)"
-  const [csvError, setCsvError]       = useState('')
-  const [searchQ, setSearchQ]         = useState('')
-  const [showNewRelease, setShowNewRelease] = useState(false)
-  const [newRelease, setNewRelease]   = useState({ name: '', jiraTicket: '', jiraUrl: '', description: '', qaResource: '', reviewer: '' })
+  const [testCases, setTestCases]             = useState([])
+  const [csvSources, setCsvSources]           = useState([])
+  const [loadingCsv, setLoadingCsv]           = useState(false)
+  const [loadProgress, setLoadProgress]       = useState('')
+  const [csvError, setCsvError]               = useState('')
+  const [searchQ, setSearchQ]                 = useState('')
+  const [showNewRelease, setShowNewRelease]   = useState(false)
+  const [newRelease, setNewRelease]           = useState({ name: '', jiraTicket: '', jiraUrl: '', description: '', qaResource: '', reviewer: '' })
+  const notesTimerRef                         = useRef({})
 
-  const persist = useCallback((updater) => {
-    setState(prev => {
-      const next = typeof updater === 'function' ? updater(prev) : updater
-      saveState(next)
-      return next
-    })
-  }, [])
+  // Load all releases + their test cases from Supabase on mount
+  useEffect(() => { loadFromSupabase() }, [])
+
+  const loadFromSupabase = async () => {
+    setDbLoading(true)
+    try {
+      const { data: relData, error: rErr } = await supabase
+        .from('beacon_releases').select('*').order('created_at', { ascending: false })
+      if (rErr) throw rErr
+
+      const { data: tcData, error: tcErr } = await supabase
+        .from('beacon_test_cases').select('*')
+      if (tcErr) throw tcErr
+
+      setReleases(relData.map(r => ({
+        id: r.id,
+        name: r.name,
+        jiraTicket: r.jira_ticket || '',
+        jiraUrl: r.jira_url || '',
+        description: r.description || '',
+        qaResource: r.qa_resource || '',
+        reviewer: r.reviewer || '',
+        createdAt: r.created_at,
+        testCases: (tcData || [])
+          .filter(tc => tc.release_id === r.id)
+          .map(tc => ({
+            id: tc.tc_id,
+            title: tc.title,
+            module: tc.module,
+            submodule: tc.submodule,
+            priority: tc.priority,
+            labels: tc.labels,
+            precondition: tc.precondition,
+            testSteps: tc.test_steps,
+            expectedResult: tc.expected_result,
+            source: tc.source,
+            status: tc.status,
+            notes: tc.notes,
+            updatedAt: tc.updated_at,
+          })),
+      })))
+    } catch (e) {
+      console.error('Supabase load error:', e)
+    } finally {
+      setDbLoading(false)
+    }
+  }
 
   const applyRows = (rows, sourceName) => {
     const filtered = rows.filter(isCantBeAutomated).map(normalizeTC)
     return { filtered, source: { name: sourceName, count: filtered.length, total: rows.length } }
   }
 
-  // Build headers, optionally with a GitHub token
   const ghHeaders = (token) => token ? { Authorization: `token ${token}` } : {}
 
-  // Fetch one raw file from GitHub and return parsed + filtered rows
   const fetchOneFile = async (rawUrl, label, token) => {
     const res = await fetch(rawUrl, { headers: ghHeaders(token) })
     if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${label}`)
@@ -159,7 +198,6 @@ export default function App() {
     return applyRows(rows, label)
   }
 
-  // Fetch all CSVs from a GitHub folder via Contents API
   const fetchFolder = async (owner, repo, branch, folder, token) => {
     const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${folder}?ref=${branch}`
     const res = await fetch(apiUrl, { headers: ghHeaders(token) })
@@ -173,7 +211,7 @@ export default function App() {
   }
 
   const fetchFromGithub = useCallback(async (config) => {
-    const cfg = config || state.githubConfig
+    const cfg = config || githubConfig
     if (!cfg.url) return
 
     setLoadingCsv(true); setCsvError(''); setCsvSources([]); setLoadProgress('')
@@ -204,7 +242,6 @@ export default function App() {
           }
         }
       } else {
-        // Single-file mode
         if (!cfg.file) throw new Error('Enter a CSV file path')
         setLoadProgress(`Fetching ${cfg.file}…`)
         const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${cfg.file}`
@@ -222,7 +259,7 @@ export default function App() {
       setLoadingCsv(false)
       setLoadProgress('')
     }
-  }, [state.githubConfig])
+  }, [githubConfig])
 
   const loadLocalFiles = useCallback(async (files) => {
     if (!files?.length) return
@@ -248,78 +285,131 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const cfg = state.githubConfig
+    const cfg = githubConfig
     const hasGithub = cfg.url && (cfg.mode === 'folders' ? cfg.folders : cfg.file)
     if (hasGithub) fetchFromGithub()
   }, [])
 
-  const activeRelease = state.releases.find(r => r.id === activeReleaseId)
+  const activeRelease = releases.find(r => r.id === activeReleaseId)
 
-  const addRelease = () => {
+  const addRelease = async () => {
     if (!newRelease.name.trim()) return
     const release = { id: Date.now().toString(), ...newRelease, createdAt: new Date().toISOString(), testCases: [] }
-    persist(p => ({ ...p, releases: [release, ...p.releases] }))
-    setNewRelease({ name: '', jiraTicket: '', jiraUrl: '', description: '' })
+    setReleases(p => [release, ...p])
+    setNewRelease({ name: '', jiraTicket: '', jiraUrl: '', description: '', qaResource: '', reviewer: '' })
     setShowNewRelease(false)
     setActiveReleaseId(release.id)
     setActiveView('release-detail')
+
+    const { error } = await supabase.from('beacon_releases').insert({
+      id: release.id, name: release.name,
+      jira_ticket: release.jiraTicket, jira_url: release.jiraUrl,
+      description: release.description, qa_resource: release.qaResource,
+      reviewer: release.reviewer, created_at: release.createdAt,
+    })
+    if (error) console.error('Failed to save release:', error)
   }
 
-  const deleteRelease = (id) => {
-    persist(p => ({ ...p, releases: p.releases.filter(r => r.id !== id) }))
+  const deleteRelease = async (id) => {
+    setReleases(p => p.filter(r => r.id !== id))
     if (activeReleaseId === id) { setActiveView('releases'); setActiveReleaseId(null) }
+
+    const { error } = await supabase.from('beacon_releases').delete().eq('id', id)
+    if (error) console.error('Failed to delete release:', error)
   }
 
-  const toggleTestCase = (releaseId, tc) => {
-    persist(p => ({
-      ...p,
-      releases: p.releases.map(r => {
-        if (r.id !== releaseId) return r
-        const exists = r.testCases.find(t => t.id === tc.id)
-        return {
-          ...r,
-          testCases: exists
-            ? r.testCases.filter(t => t.id !== tc.id)
-            : [...r.testCases, { ...tc, status: 'pending', notes: '', updatedAt: null }],
-        }
-      }),
-    }))
-  }
+  const toggleTestCase = async (releaseId, tc) => {
+    const release = releases.find(r => r.id === releaseId)
+    const exists = release?.testCases.find(t => t.id === tc.id)
 
-  const bulkToggle = (releaseId, tcs, add) => {
-    persist(p => ({
-      ...p,
-      releases: p.releases.map(r => {
-        if (r.id !== releaseId) return r
-        if (!add) {
-          const ids = new Set(tcs.map(t => t.id))
-          return { ...r, testCases: r.testCases.filter(t => !ids.has(t.id)) }
-        }
-        const existing = new Set(r.testCases.map(t => t.id))
-        const toAdd = tcs.filter(t => !existing.has(t.id)).map(tc => ({ ...tc, status: 'pending', notes: '', updatedAt: null }))
-        return { ...r, testCases: [...r.testCases, ...toAdd] }
-      }),
-    }))
-  }
-
-  const updateTestStatus = (releaseId, tcId, status) => {
-    persist(p => ({
-      ...p,
-      releases: p.releases.map(r => r.id !== releaseId ? r : {
+    setReleases(p => p.map(r => {
+      if (r.id !== releaseId) return r
+      return {
         ...r,
-        testCases: r.testCases.map(t => t.id !== tcId ? t : { ...t, status, updatedAt: new Date().toISOString() }),
-      }),
+        testCases: exists
+          ? r.testCases.filter(t => t.id !== tc.id)
+          : [...r.testCases, { ...tc, status: 'pending', notes: '', updatedAt: null }],
+      }
     }))
+
+    if (exists) {
+      const { error } = await supabase.from('beacon_test_cases')
+        .delete().eq('release_id', releaseId).eq('tc_id', tc.id)
+      if (error) console.error('Failed to remove test case:', error)
+    } else {
+      const { error } = await supabase.from('beacon_test_cases').insert({
+        release_id: releaseId, tc_id: tc.id, title: tc.title,
+        module: tc.module, submodule: tc.submodule, priority: tc.priority,
+        labels: tc.labels, precondition: tc.precondition,
+        test_steps: tc.testSteps, expected_result: tc.expectedResult,
+        source: tc.source, status: 'pending', notes: '',
+      })
+      if (error) console.error('Failed to add test case:', error)
+    }
+  }
+
+  const bulkToggle = async (releaseId, tcs, add) => {
+    const release = releases.find(r => r.id === releaseId)
+
+    setReleases(p => p.map(r => {
+      if (r.id !== releaseId) return r
+      if (!add) {
+        const ids = new Set(tcs.map(t => t.id))
+        return { ...r, testCases: r.testCases.filter(t => !ids.has(t.id)) }
+      }
+      const existing = new Set(r.testCases.map(t => t.id))
+      const toAdd = tcs.filter(t => !existing.has(t.id)).map(tc => ({ ...tc, status: 'pending', notes: '', updatedAt: null }))
+      return { ...r, testCases: [...r.testCases, ...toAdd] }
+    }))
+
+    if (add) {
+      const existing = new Set(release?.testCases.map(t => t.id) || [])
+      const toInsert = tcs.filter(t => !existing.has(t.id)).map(tc => ({
+        release_id: releaseId, tc_id: tc.id, title: tc.title,
+        module: tc.module, submodule: tc.submodule, priority: tc.priority,
+        labels: tc.labels, precondition: tc.precondition,
+        test_steps: tc.testSteps, expected_result: tc.expectedResult,
+        source: tc.source, status: 'pending', notes: '',
+      }))
+      if (toInsert.length) {
+        const { error } = await supabase.from('beacon_test_cases').insert(toInsert)
+        if (error) console.error('Failed to bulk add:', error)
+      }
+    } else {
+      const ids = tcs.map(t => t.id)
+      const { error } = await supabase.from('beacon_test_cases')
+        .delete().eq('release_id', releaseId).in('tc_id', ids)
+      if (error) console.error('Failed to bulk remove:', error)
+    }
+  }
+
+  const updateTestStatus = async (releaseId, tcId, status) => {
+    const updatedAt = new Date().toISOString()
+    setReleases(p => p.map(r => r.id !== releaseId ? r : {
+      ...r,
+      testCases: r.testCases.map(t => t.id !== tcId ? t : { ...t, status, updatedAt }),
+    }))
+
+    const { error } = await supabase.from('beacon_test_cases')
+      .update({ status, updated_at: updatedAt })
+      .eq('release_id', releaseId).eq('tc_id', tcId)
+    if (error) console.error('Failed to update status:', error)
   }
 
   const updateTestNotes = (releaseId, tcId, notes) => {
-    persist(p => ({
-      ...p,
-      releases: p.releases.map(r => r.id !== releaseId ? r : {
-        ...r,
-        testCases: r.testCases.map(t => t.id !== tcId ? t : { ...t, notes }),
-      }),
+    setReleases(p => p.map(r => r.id !== releaseId ? r : {
+      ...r,
+      testCases: r.testCases.map(t => t.id !== tcId ? t : { ...t, notes }),
     }))
+
+    // Debounce Supabase write — only fires 800ms after user stops typing
+    const key = `${releaseId}:${tcId}`
+    clearTimeout(notesTimerRef.current[key])
+    notesTimerRef.current[key] = setTimeout(async () => {
+      const { error } = await supabase.from('beacon_test_cases')
+        .update({ notes }).eq('release_id', releaseId).eq('tc_id', tcId)
+      if (error) console.error('Failed to save notes:', error)
+    }, 800)
   }
 
   const exportRelease = (release) => {
@@ -351,6 +441,17 @@ export default function App() {
     }
   }
 
+  if (dbLoading) {
+    return (
+      <div className="app" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center', color: 'var(--text3)' }}>
+          <RefreshCw size={24} className="spin" style={{ marginBottom: '12px' }} />
+          <p style={{ fontSize: '14px' }}>Loading Beacon…</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="app">
       <aside className="sidebar">
@@ -379,6 +480,13 @@ export default function App() {
           <span className="tc-count">
             {testCases.length > 0 ? `${testCases.length} manual TCs loaded` : 'No test cases loaded'}
           </span>
+          <button
+            onClick={loadFromSupabase}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: '11px', padding: '4px 0', display: 'flex', alignItems: 'center', gap: '4px' }}
+            title="Refresh releases from Supabase"
+          >
+            <RefreshCw size={11} /> Sync
+          </button>
           <div className="brand-credit">
             <span>Exclusive Datman QA Tool</span>
             <span>Crafted by Sundar</span>
@@ -389,8 +497,8 @@ export default function App() {
       <main className="main">
         {activeView === 'settings' && (
           <SettingsView
-            config={state.githubConfig}
-            onSave={(cfg) => { persist(p => ({ ...p, githubConfig: cfg })); fetchFromGithub(cfg) }}
+            config={githubConfig}
+            onSave={(cfg) => { setGithubConfig(cfg); saveGithubConfig(cfg); fetchFromGithub(cfg) }}
             onLoadFiles={loadLocalFiles}
             loading={loadingCsv}
             progress={loadProgress}
@@ -401,7 +509,7 @@ export default function App() {
         )}
         {activeView === 'releases' && (
           <ReleasesView
-            releases={state.releases}
+            releases={releases}
             onNew={() => setShowNewRelease(true)}
             onOpen={(id) => { setActiveReleaseId(id); setActiveView('release-detail') }}
             onDelete={deleteRelease}
@@ -654,7 +762,6 @@ function CoverageView({ testCases }) {
 
       {/* ── Submodule detail: top-heavy modules ── */}
       {moduleEntries.filter(([, d]) => d.submodules.size > 0).slice(0, 5).map(([mod, data], mi) => {
-        // Build submodule counts for this module
         const subCounts = testCases
           .filter(tc => tc.module === mod && tc.submodule)
           .reduce((acc, tc) => {
@@ -705,7 +812,6 @@ function SettingsView({ config, onSave, onLoadFiles, loading, progress, error, t
     if (csvFiles.length) onLoadFiles(csvFiles)
   }
 
-  // Group sources by folder for display
   const sourcesByFolder = csvSources.reduce((acc, s) => {
     const parts = s.name.split('/')
     const folder = parts.length > 1 ? parts[0] : '(root)'
@@ -783,7 +889,6 @@ function SettingsView({ config, onSave, onLoadFiles, loading, progress, error, t
           </div>
         )}
 
-        {/* Progress / status */}
         {loading && progress && (
           <div className="info-box" style={{ marginBottom: '0.75rem' }}>
             <RefreshCw size={13} className="spin" /> {progress}
@@ -811,7 +916,6 @@ function SettingsView({ config, onSave, onLoadFiles, loading, progress, error, t
             : <><RefreshCw size={13} /> Sync from GitHub</>}
         </button>
 
-        {/* Per-folder breakdown */}
         {Object.keys(sourcesByFolder).length > 0 && (
           <div className="source-list" style={{ marginTop: '1rem' }}>
             {Object.entries(sourcesByFolder).map(([folder, data]) => (
@@ -1101,7 +1205,6 @@ function PickPanel({ allTestCases, release, onToggle, onBulkToggle, testCasesLoa
 
   const selectedIds = new Set(release.testCases.map(t => t.id))
 
-  // Module → Submodule → [tcs]
   const hierarchy = allTestCases.reduce((acc, tc) => {
     const mod = tc.module || 'Uncategorised'
     const sub = tc.submodule || 'General'
