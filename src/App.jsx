@@ -512,10 +512,15 @@ export default function App() {
 
   if (dbLoading) {
     return (
-      <div className="app" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ textAlign: 'center', color: 'var(--text3)' }}>
-          <RefreshCw size={24} className="spin" style={{ marginBottom: '12px' }} />
-          <p style={{ fontSize: '14px' }}>Loading Beacon…</p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'var(--sb-bg)' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ width: 48, height: 48, borderRadius: 14, background: 'linear-gradient(135deg, #1D4ED8 0%, #0EA5E9 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', boxShadow: '0 4px 16px rgba(29,78,216,0.4)' }}>
+            <Radio size={22} color="#fff" strokeWidth={2} />
+          </div>
+          <p style={{ fontSize: '16px', fontWeight: 700, color: '#F8FAFC', fontFamily: 'var(--font-head)', marginBottom: 6 }}>Beacon</p>
+          <p style={{ fontSize: '12px', color: '#4B607C', display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center' }}>
+            <RefreshCw size={12} className="spin" style={{ color: '#2563EB' }} /> Loading…
+          </p>
         </div>
       </div>
     )
@@ -525,12 +530,16 @@ export default function App() {
     <div className="app">
       <aside className="sidebar">
         <div className="logo">
-          <Radio size={17} strokeWidth={2.2} />
+          <div className="logo-icon-wrap">
+            <Radio size={18} color="#fff" strokeWidth={2.2} />
+          </div>
           <div className="logo-text">
             <span className="logo-name">Beacon</span>
             <span className="logo-tagline">by Datman</span>
           </div>
         </div>
+
+        <div className="nav-section-label">Tools</div>
         <nav className="nav">
           <button className={`nav-item ${activeView === 'releases' || activeView === 'release-detail' ? 'active' : ''}`}
             onClick={() => setActiveView('releases')}>
@@ -545,16 +554,13 @@ export default function App() {
             <Settings size={15} /> Settings
           </button>
         </nav>
+
         <div className="sidebar-footer">
           <span className="tc-count">
-            {testCases.length > 0 ? `${testCases.length} manual TCs loaded` : 'No test cases loaded'}
+            {testCases.length > 0 ? `${testCases.length} test cases loaded` : 'No test cases loaded'}
           </span>
-          <button
-            onClick={loadFromSupabase}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: '11px', padding: '4px 0', display: 'flex', alignItems: 'center', gap: '4px' }}
-            title="Refresh releases from Supabase"
-          >
-            <RefreshCw size={11} /> Sync
+          <button className="nav-item" onClick={loadFromSupabase} style={{ opacity: 0.7, fontSize: '12px' }}>
+            <RefreshCw size={13} /> Refresh
           </button>
           <div className="brand-credit">
             <span>Exclusive Datman QA Tool</span>
@@ -647,7 +653,7 @@ function DonutChart({ segments, size = 148 }) {
         {total}
       </text>
       <text x={cx} y={cy + 11} textAnchor="middle"
-        fill="var(--text3)" fontSize="9" fontFamily="var(--font-mono)">
+        fill="var(--text3)" fontSize="9" fontFamily="var(--font-body)">
         test cases
       </text>
     </svg>
