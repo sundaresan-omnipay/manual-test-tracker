@@ -133,7 +133,7 @@ export default function App() {
   const [csvError, setCsvError]               = useState('')
   const [searchQ, setSearchQ]                 = useState('')
   const [showNewRelease, setShowNewRelease]   = useState(false)
-  const [newRelease, setNewRelease]           = useState({ name: '', jiraTicket: '', jiraUrl: '', description: '', qaResource: '', reviewer: '' })
+  const [newRelease, setNewRelease]           = useState({ name: '', jiraTicket: '', jiraUrl: '', description: '', qaResource: '', reviewer: '', releaseDate: '', environment: 'Staging' })
   const notesTimerRef                         = useRef({})
 
   // Load all releases + their test cases from Supabase on mount
@@ -159,6 +159,9 @@ export default function App() {
         description: r.description || '',
         qaResource: r.qa_resource || '',
         reviewer: r.reviewer || '',
+        releaseDate: r.release_date || '',
+        environment: r.environment || 'Staging',
+        checklist: r.checklist || {},
         createdAt: r.created_at,
         testCases: (tcData || [])
           .filter(tc => tc.release_id === r.id)
@@ -365,7 +368,7 @@ export default function App() {
     if (!newRelease.name.trim()) return
     const release = { id: Date.now().toString(), ...newRelease, createdAt: new Date().toISOString(), testCases: [] }
     setReleases(p => [release, ...p])
-    setNewRelease({ name: '', jiraTicket: '', jiraUrl: '', description: '', qaResource: '', reviewer: '' })
+    setNewRelease({ name: '', jiraTicket: '', jiraUrl: '', description: '', qaResource: '', reviewer: '', releaseDate: '', environment: 'Staging' })
     setShowNewRelease(false)
     setActiveReleaseId(release.id)
     setActiveView('release-detail')
@@ -375,6 +378,9 @@ export default function App() {
       jira_ticket: release.jiraTicket, jira_url: release.jiraUrl,
       description: release.description, qa_resource: release.qaResource,
       reviewer: release.reviewer, created_at: release.createdAt,
+      release_date: release.releaseDate || null,
+      environment: release.environment || 'Staging',
+      checklist: {},
     })
     if (error) console.error('Failed to save release:', error)
   }
@@ -416,6 +422,16 @@ export default function App() {
       const { error: tcErr } = await supabase.from('beacon_test_cases').insert(rows)
       if (tcErr) console.error('Failed to clone test cases:', tcErr)
     }
+  }
+
+  const updateChecklist = async (releaseId, key, checked) => {
+    setReleases(p => p.map(r => {
+      if (r.id !== releaseId) return r
+      return { ...r, checklist: { ...r.checklist, [key]: checked } }
+    }))
+    const rel = releases.find(r => r.id === releaseId)
+    const updated = { ...(rel?.checklist || {}), [key]: checked }
+    await supabase.from('beacon_releases').update({ checklist: updated }).eq('id', releaseId)
   }
 
   const toggleTestCase = async (releaseId, tc) => {
@@ -647,6 +663,7 @@ export default function App() {
             loadingCsv={loadingCsv}
             onRefresh={fetchFromGithub}
             testCasesLoaded={testCases.length > 0}
+            onChecklistChange={(key, val) => updateChecklist(activeRelease.id, key, val)}
           />
         )}
       </main>
@@ -1082,6 +1099,24 @@ function SettingsView({ config, onSave, onLoadFiles, loading, progress, error, t
 }
 
 // ── Releases View ──────────────────────────────────────────────────────────────
+const DEFAULT_CHECKLIST = [
+  { key: 'smoke',       label: 'Smoke test completed' },
+  { key: 'regression',  label: 'Full regression run' },
+  { key: 'p0_resolved', label: 'P0/P1 failures resolved or accepted' },
+  { key: 'browser',     label: 'Browser compatibility verified' },
+  { key: 'api',         label: 'API contract tests passed' },
+  { key: 'qa_signoff',  label: 'QA sign-off obtained' },
+  { key: 'approved',    label: 'Reviewer approved' },
+]
+
+const ENV_CONFIG = {
+  Staging:    { color: '#818CF8', bg: 'rgba(129,140,248,0.12)', border: 'rgba(129,140,248,0.4)' },
+  UAT:        { color: '#FCD34D', bg: 'rgba(251,191,36,0.12)',  border: 'rgba(251,191,36,0.4)' },
+  Production: { color: '#34D399', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.4)' },
+  Hotfix:     { color: '#FCA5A5', bg: 'rgba(248,113,113,0.12)',border: 'rgba(248,113,113,0.4)' },
+  Sandbox:    { color: '#C4B5FD', bg: 'rgba(139,92,246,0.12)', border: 'rgba(139,92,246,0.4)' },
+}
+
 function getShipStatus(release, s) {
   if (s.total === 0) return null
   const p0Fails = release.testCases.filter(t => t.priority === 'P0' && t.status === 'fail').length
@@ -1093,6 +1128,22 @@ function getShipStatus(release, s) {
 
 function ReleasesView({ releases, onNew, onOpen, onDelete, onClone, getStats, showNew, newRelease, setNewRelease, onAddRelease, onCancelNew }) {
   const set = (k, v) => setNewRelease(p => ({ ...p, [k]: v }))
+  const [collapsedMonths, setCollapsedMonths] = useState({})
+  const [envFilter, setEnvFilter] = useState('all')
+
+  const filtered = envFilter === 'all' ? releases : releases.filter(r => (r.environment || 'Staging') === envFilter)
+
+  // Group by month using releaseDate if set, otherwise createdAt
+  const monthGroups = {}
+  filtered.forEach(r => {
+    const d = r.releaseDate ? new Date(r.releaseDate + 'T00:00:00') : new Date(r.createdAt)
+    const key = d.toLocaleString('default', { month: 'long', year: 'numeric' })
+    if (!monthGroups[key]) monthGroups[key] = []
+    monthGroups[key].push(r)
+  })
+
+  const toggleMonth = (m) => setCollapsedMonths(p => ({ ...p, [m]: !p[m] }))
+  const usedEnvs = [...new Set(releases.map(r => r.environment || 'Staging'))]
 
   return (
     <div className="view">
@@ -1103,6 +1154,26 @@ function ReleasesView({ releases, onNew, onOpen, onDelete, onClone, getStats, sh
         </div>
         <button className="btn-primary" onClick={onNew}><Plus size={14} /> New Release</button>
       </div>
+
+      {/* Env filter chips */}
+      {usedEnvs.length > 1 && (
+        <div className="filter-chips" style={{ marginBottom: '1rem' }}>
+          <button className={`filter-chip ${envFilter === 'all' ? 'active' : ''}`} onClick={() => setEnvFilter('all')}>
+            All Environments
+          </button>
+          {usedEnvs.map(env => {
+            const cfg = ENV_CONFIG[env] || ENV_CONFIG.Staging
+            return (
+              <button key={env}
+                className={`filter-chip ${envFilter === env ? 'active' : ''}`}
+                style={envFilter === env ? { color: cfg.color, background: cfg.bg, borderColor: cfg.border } : {}}
+                onClick={() => setEnvFilter(p => p === env ? 'all' : env)}>
+                {env}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {showNew && (
         <div className="new-release-card">
@@ -1118,6 +1189,18 @@ function ReleasesView({ releases, onNew, onOpen, onDelete, onClone, getStats, sh
             <div className="field-group">
               <label>Jira Ticket</label>
               <input value={newRelease.jiraTicket} onChange={e => set('jiraTicket', e.target.value)} placeholder="REL-123" />
+            </div>
+          </div>
+          <div className="field-row">
+            <div className="field-group">
+              <label>Release Date</label>
+              <input type="date" value={newRelease.releaseDate} onChange={e => set('releaseDate', e.target.value)} />
+            </div>
+            <div className="field-group">
+              <label>Environment</label>
+              <select value={newRelease.environment} onChange={e => set('environment', e.target.value)}>
+                {Object.keys(ENV_CONFIG).map(k => <option key={k} value={k}>{k}</option>)}
+              </select>
             </div>
           </div>
           <div className="field-group">
@@ -1154,77 +1237,106 @@ function ReleasesView({ releases, onNew, onOpen, onDelete, onClone, getStats, sh
         </div>
       )}
 
-      <div className="releases-grid">
-        {releases.map(r => {
-          const s = getStats(r)
-          const pct = s.total > 0 ? Math.round((s.pass / s.total) * 100) : 0
-          const ship = getShipStatus(r, s)
-          return (
-            <div className="release-card" key={r.id} onClick={() => onOpen(r.id)}>
-              <div className="release-card-top">
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                    <div className="release-name">{r.name}</div>
-                    {ship && (
-                      <span className="ship-badge" style={{ color: ship.color, background: ship.bg, border: `1px solid ${ship.border}` }}>
-                        {ship.label}
-                      </span>
-                    )}
-                  </div>
-                  {r.jiraTicket && (
-                    <a className="jira-badge" href={r.jiraUrl || '#'} target="_blank" rel="noreferrer"
-                      onClick={e => e.stopPropagation()}>
-                      <ExternalLink size={11} /> {r.jiraTicket}
-                    </a>
-                  )}
-                </div>
-                <div style={{ display: 'flex', gap: '4px' }}>
-                  <button className="icon-btn" title="Clone release" onClick={e => { e.stopPropagation(); onClone(r) }}>
-                    <Copy size={14} />
-                  </button>
-                  <button className="icon-btn danger" onClick={e => { e.stopPropagation(); onDelete(r.id) }}>
-                    <Trash2 size={14} />
-                  </button>
-                </div>
+      {Object.entries(monthGroups).map(([month, monthReleases]) => {
+        const collapsed = collapsedMonths[month]
+        const monthPass = monthReleases.reduce((sum, r) => sum + getStats(r).pass, 0)
+        const monthTotal = monthReleases.reduce((sum, r) => sum + getStats(r).total, 0)
+        return (
+          <div key={month} className="month-group">
+            <button className="month-header" onClick={() => toggleMonth(month)}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                <span className="month-label">{month}</span>
+                <span className="month-count">{monthReleases.length} release{monthReleases.length !== 1 ? 's' : ''}</span>
               </div>
-              {r.description && <p className="release-desc">{r.description}</p>}
-              {(r.qaResource || r.reviewer) && (
-                <div className="release-people">
-                  {r.qaResource && (
-                    <span className="person-badge qa">
-                      <User size={10} /> QA: {r.qaResource}
-                    </span>
-                  )}
-                  {r.reviewer && (
-                    <span className="person-badge rev">
-                      <UserCheck size={10} /> Reviewer: {r.reviewer}
-                    </span>
-                  )}
-                </div>
+              {monthTotal > 0 && (
+                <span className="month-progress">
+                  {monthPass}/{monthTotal} passed
+                </span>
               )}
-              <div className="release-stats">
-                {Object.entries({ pass: s.pass, fail: s.fail, skip: s.skip, pending: s.pending }).map(([k, v]) => (
-                  <span key={k} className={`stat-badge stat-${k}`}>{v} {k}</span>
-                ))}
+            </button>
+
+            {!collapsed && (
+              <div className="releases-grid" style={{ padding: '0 0 8px' }}>
+                {monthReleases.map(r => {
+                  const s = getStats(r)
+                  const pct = s.total > 0 ? Math.round((s.pass / s.total) * 100) : 0
+                  const ship = getShipStatus(r, s)
+                  const env = r.environment || 'Staging'
+                  const envCfg = ENV_CONFIG[env] || ENV_CONFIG.Staging
+                  return (
+                    <div className="release-card" key={r.id} onClick={() => onOpen(r.id)}>
+                      <div className="release-card-top">
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginBottom: '3px' }}>
+                            <div className="release-name">{r.name}</div>
+                            <span className="env-badge" style={{ color: envCfg.color, background: envCfg.bg, border: `1px solid ${envCfg.border}` }}>{env}</span>
+                            {ship && (
+                              <span className="ship-badge" style={{ color: ship.color, background: ship.bg, border: `1px solid ${ship.border}` }}>
+                                {ship.label}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            {r.jiraTicket && (
+                              <a className="jira-badge" href={r.jiraUrl || '#'} target="_blank" rel="noreferrer"
+                                onClick={e => e.stopPropagation()}>
+                                <ExternalLink size={11} /> {r.jiraTicket}
+                              </a>
+                            )}
+                            {r.releaseDate && (
+                              <span style={{ fontSize: '11px', color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                📅 {new Date(r.releaseDate + 'T00:00:00').toLocaleDateString('default', { day: 'numeric', month: 'short' })}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                          <button className="icon-btn" title="Clone release" onClick={e => { e.stopPropagation(); onClone(r) }}>
+                            <Copy size={14} />
+                          </button>
+                          <button className="icon-btn danger" onClick={e => { e.stopPropagation(); onDelete(r.id) }}>
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                      {r.description && <p className="release-desc">{r.description}</p>}
+                      {(r.qaResource || r.reviewer) && (
+                        <div className="release-people">
+                          {r.qaResource && <span className="person-badge qa"><User size={10} /> QA: {r.qaResource}</span>}
+                          {r.reviewer && <span className="person-badge rev"><UserCheck size={10} /> Reviewer: {r.reviewer}</span>}
+                        </div>
+                      )}
+                      <div className="release-stats">
+                        {Object.entries({ pass: s.pass, fail: s.fail, skip: s.skip, pending: s.pending }).map(([k, v]) => (
+                          <span key={k} className={`stat-badge stat-${k}`}>{v} {k}</span>
+                        ))}
+                      </div>
+                      <div className="progress-bar">
+                        <div className="progress-fill" style={{ width: `${pct}%` }} />
+                      </div>
+                      <div className="progress-label">{s.total} test cases · {pct}% passed</div>
+                    </div>
+                  )
+                })}
               </div>
-              <div className="progress-bar">
-                <div className="progress-fill" style={{ width: `${pct}%` }} />
-              </div>
-              <div className="progress-label">{s.total} test cases · {pct}% passed</div>
-            </div>
-          )
-        })}
-      </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
 
 // ── Release Detail View ────────────────────────────────────────────────────────
-function ReleaseDetailView({ release, allTestCases, searchQ, setSearchQ, onToggle, onBulkToggle, onStatusChange, onNotesChange, onBack, onExport, getStats, loadingCsv, onRefresh, testCasesLoaded }) {
+function ReleaseDetailView({ release, allTestCases, searchQ, setSearchQ, onToggle, onBulkToggle, onStatusChange, onNotesChange, onBack, onExport, getStats, loadingCsv, onRefresh, testCasesLoaded, onChecklistChange }) {
   const [tab, setTab] = useState('run')
   const [copied, setCopied] = useState(false)
   const s = getStats(release)
   const ship = getShipStatus(release, s)
+  const env = release.environment || 'Staging'
+  const envCfg = ENV_CONFIG[env] || ENV_CONFIG.Staging
+  const checklistDone = DEFAULT_CHECKLIST.filter(item => release.checklist?.[item.key]).length
 
   function copySummary() {
     const pct = s.total > 0 ? Math.round((s.pass / s.total) * 100) : 0
@@ -1258,8 +1370,9 @@ function ReleaseDetailView({ release, allTestCases, searchQ, setSearchQ, onToggl
             <ChevronDown size={16} style={{ transform: 'rotate(90deg)' }} />
           </button>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <h1>{release.name}</h1>
+              <span className="env-badge env-badge-lg" style={{ color: envCfg.color, background: envCfg.bg, border: `1px solid ${envCfg.border}` }}>{env}</span>
               {ship && (
                 <span className="ship-badge ship-badge-lg" style={{ color: ship.color, background: ship.bg, border: `1px solid ${ship.border}` }}>
                   {ship.label}
@@ -1328,6 +1441,9 @@ function ReleaseDetailView({ release, allTestCases, searchQ, setSearchQ, onToggl
         <button className={`tab ${tab === 'pick' ? 'active' : ''}`} onClick={() => setTab('pick')}>
           Pick Test Cases {allTestCases.length > 0 && `(${allTestCases.length} available)`}
         </button>
+        <button className={`tab ${tab === 'checklist' ? 'active' : ''}`} onClick={() => setTab('checklist')}>
+          Checklist {checklistDone > 0 && `(${checklistDone}/${DEFAULT_CHECKLIST.length})`}
+        </button>
       </div>
 
       {/* Search */}
@@ -1361,6 +1477,10 @@ function ReleaseDetailView({ release, allTestCases, searchQ, setSearchQ, onToggl
           onStatusChange={onStatusChange}
           onNotesChange={onNotesChange}
         />
+      )}
+
+      {tab === 'checklist' && (
+        <ChecklistPanel checklist={release.checklist || {}} onChange={onChecklistChange} done={checklistDone} total={DEFAULT_CHECKLIST.length} />
       )}
     </div>
   )
@@ -1477,6 +1597,46 @@ function PickPanel({ allTestCases, release, onToggle, onBulkToggle, testCasesLoa
           </div>
         )
       })}
+    </div>
+  )
+}
+
+// ── Checklist Panel ───────────────────────────────────────────────────────────
+function ChecklistPanel({ checklist, onChange, done, total }) {
+  const allDone = done === total
+  return (
+    <div className="checklist-panel">
+      <div className="checklist-header">
+        <div>
+          <span className="checklist-title">Pre-Release Gates</span>
+          <span className="checklist-sub">Sign off each gate before marking the release ready</span>
+        </div>
+        <div className="checklist-progress-wrap">
+          <span className="checklist-count" style={{ color: allDone ? 'var(--green)' : 'var(--text2)' }}>
+            {done}/{total} {allDone ? '— All Clear ✓' : 'complete'}
+          </span>
+          <div className="progress-bar" style={{ width: 140, marginBottom: 0 }}>
+            <div className="progress-fill" style={{ width: `${total > 0 ? Math.round((done / total) * 100) : 0}%` }} />
+          </div>
+        </div>
+      </div>
+      <div className="checklist-items">
+        {DEFAULT_CHECKLIST.map(item => {
+          const checked = !!checklist[item.key]
+          return (
+            <label key={item.key} className={`checklist-item ${checked ? 'checked' : ''}`}>
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={e => onChange(item.key, e.target.checked)}
+                style={{ accentColor: 'var(--green)', width: 'auto', flexShrink: 0, margin: 0 }}
+              />
+              <span className="checklist-item-label">{item.label}</span>
+              {checked && <span className="checklist-tick">✓</span>}
+            </label>
+          )
+        })}
+      </div>
     </div>
   )
 }
