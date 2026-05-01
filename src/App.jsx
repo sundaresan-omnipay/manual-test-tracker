@@ -5,7 +5,7 @@ import {
   RefreshCw, ChevronDown, ChevronUp, Search,
   Download, Settings, X, AlertCircle, SkipForward, Layers,
   Upload, Tag, FileText, ChevronRight, Filter, BarChart2,
-  Radio, User, UserCheck
+  Radio, User, UserCheck, Copy
 } from 'lucide-react'
 import { supabase } from './lib/supabase.js'
 
@@ -387,6 +387,37 @@ export default function App() {
     if (error) console.error('Failed to delete release:', error)
   }
 
+  const cloneRelease = async (source) => {
+    const cloneId = Date.now().toString()
+    const cloneName = `Copy of ${source.name}`
+    const clonedTcs = source.testCases.map(tc => ({ ...tc, status: 'pending', notes: '', updatedAt: null }))
+    const clone = { id: cloneId, name: cloneName, jiraTicket: source.jiraTicket, jiraUrl: source.jiraUrl, description: source.description, qaResource: source.qaResource, reviewer: source.reviewer, createdAt: new Date().toISOString(), testCases: clonedTcs }
+
+    setReleases(p => [clone, ...p])
+    setActiveReleaseId(cloneId)
+    setActiveView('release-detail')
+
+    const { error: rErr } = await supabase.from('beacon_releases').insert({
+      id: cloneId, name: cloneName,
+      jira_ticket: source.jiraTicket, jira_url: source.jiraUrl,
+      description: source.description, qa_resource: source.qaResource,
+      reviewer: source.reviewer, created_at: clone.createdAt,
+    })
+    if (rErr) { console.error('Failed to clone release:', rErr); return }
+
+    if (clonedTcs.length > 0) {
+      const rows = clonedTcs.map(tc => ({
+        release_id: cloneId, tc_id: tc.id, title: tc.title,
+        module: tc.module, submodule: tc.submodule, priority: tc.priority,
+        labels: tc.labels, precondition: tc.precondition,
+        test_steps: tc.testSteps, expected_result: tc.expectedResult,
+        source: tc.source, status: 'pending', notes: '',
+      }))
+      const { error: tcErr } = await supabase.from('beacon_test_cases').insert(rows)
+      if (tcErr) console.error('Failed to clone test cases:', tcErr)
+    }
+  }
+
   const toggleTestCase = async (releaseId, tc) => {
     const release = releases.find(r => r.id === releaseId)
     const exists = release?.testCases.find(t => t.id === tc.id)
@@ -588,6 +619,7 @@ export default function App() {
             onNew={() => setShowNewRelease(true)}
             onOpen={(id) => { setActiveReleaseId(id); setActiveView('release-detail') }}
             onDelete={deleteRelease}
+            onClone={cloneRelease}
             getStats={getStats}
             showNew={showNewRelease}
             newRelease={newRelease}
@@ -1050,7 +1082,16 @@ function SettingsView({ config, onSave, onLoadFiles, loading, progress, error, t
 }
 
 // ── Releases View ──────────────────────────────────────────────────────────────
-function ReleasesView({ releases, onNew, onOpen, onDelete, getStats, showNew, newRelease, setNewRelease, onAddRelease, onCancelNew }) {
+function getShipStatus(release, s) {
+  if (s.total === 0) return null
+  const p0Fails = release.testCases.filter(t => t.priority === 'P0' && t.status === 'fail').length
+  if (p0Fails > 0) return { label: 'Blocked', color: '#FCA5A5', bg: 'rgba(248,113,113,0.12)', border: 'rgba(248,113,113,0.45)' }
+  if (s.fail > 0 && s.pending === 0) return { label: 'Has Failures', color: '#FCD34D', bg: 'rgba(251,191,36,0.1)', border: 'rgba(251,191,36,0.4)' }
+  if (s.pending > 0) return { label: 'In Progress', color: '#A78BFA', bg: 'rgba(139,92,246,0.1)', border: 'rgba(139,92,246,0.35)' }
+  return { label: 'Ready to Ship', color: '#34D399', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.45)' }
+}
+
+function ReleasesView({ releases, onNew, onOpen, onDelete, onClone, getStats, showNew, newRelease, setNewRelease, onAddRelease, onCancelNew }) {
   const set = (k, v) => setNewRelease(p => ({ ...p, [k]: v }))
 
   return (
@@ -1117,11 +1158,19 @@ function ReleasesView({ releases, onNew, onOpen, onDelete, getStats, showNew, ne
         {releases.map(r => {
           const s = getStats(r)
           const pct = s.total > 0 ? Math.round((s.pass / s.total) * 100) : 0
+          const ship = getShipStatus(r, s)
           return (
             <div className="release-card" key={r.id} onClick={() => onOpen(r.id)}>
               <div className="release-card-top">
                 <div>
-                  <div className="release-name">{r.name}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <div className="release-name">{r.name}</div>
+                    {ship && (
+                      <span className="ship-badge" style={{ color: ship.color, background: ship.bg, border: `1px solid ${ship.border}` }}>
+                        {ship.label}
+                      </span>
+                    )}
+                  </div>
                   {r.jiraTicket && (
                     <a className="jira-badge" href={r.jiraUrl || '#'} target="_blank" rel="noreferrer"
                       onClick={e => e.stopPropagation()}>
@@ -1129,9 +1178,14 @@ function ReleasesView({ releases, onNew, onOpen, onDelete, getStats, showNew, ne
                     </a>
                   )}
                 </div>
-                <button className="icon-btn danger" onClick={e => { e.stopPropagation(); onDelete(r.id) }}>
-                  <Trash2 size={14} />
-                </button>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <button className="icon-btn" title="Clone release" onClick={e => { e.stopPropagation(); onClone(r) }}>
+                    <Copy size={14} />
+                  </button>
+                  <button className="icon-btn danger" onClick={e => { e.stopPropagation(); onDelete(r.id) }}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
               {r.description && <p className="release-desc">{r.description}</p>}
               {(r.qaResource || r.reviewer) && (
@@ -1170,6 +1224,7 @@ function ReleaseDetailView({ release, allTestCases, searchQ, setSearchQ, onToggl
   const [tab, setTab] = useState('run')
   const [copied, setCopied] = useState(false)
   const s = getStats(release)
+  const ship = getShipStatus(release, s)
 
   function copySummary() {
     const pct = s.total > 0 ? Math.round((s.pass / s.total) * 100) : 0
@@ -1203,7 +1258,14 @@ function ReleaseDetailView({ release, allTestCases, searchQ, setSearchQ, onToggl
             <ChevronDown size={16} style={{ transform: 'rotate(90deg)' }} />
           </button>
           <div>
-            <h1>{release.name}</h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h1>{release.name}</h1>
+              {ship && (
+                <span className="ship-badge ship-badge-lg" style={{ color: ship.color, background: ship.bg, border: `1px solid ${ship.border}` }}>
+                  {ship.label}
+                </span>
+              )}
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
               {release.jiraTicket && (
                 <a className="jira-badge" href={release.jiraUrl || '#'} target="_blank" rel="noreferrer">

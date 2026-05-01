@@ -666,6 +666,18 @@
 .empty-state span { font-size: 12px; }
 .empty-state.sm { padding: 2rem; }
 
+/* ── Ship status badge ── */
+.ship-badge {
+  font-size: 10px; font-weight: 700; padding: 2px 9px;
+  border-radius: 20px; white-space: nowrap; letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.ship-badge-lg {
+  font-size: 11px; padding: 3px 11px;
+  box-shadow: 0 0 10px currentColor;
+  opacity: 0.9;
+}
+
 /* ── Copy summary button ── */
 .btn-copy {
   background: rgba(16,185,129,0.08);
