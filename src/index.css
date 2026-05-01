@@ -1,42 +1,42 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  /* ── Light content area ── */
-  --bg:      #F0F2F7;
+  /* ── Content area — clean white with barely-there violet tint ── */
+  --bg:      #F8F7FF;
   --bg2:     #FFFFFF;
-  --bg3:     #F4F6FA;
-  --border:  #E2E8F0;
-  --border2: #CBD5E1;
+  --bg3:     #F2EFFE;
+  --border:  #E4DCFB;
+  --border2: #C4B5FD;
 
   /* ── Text ── */
-  --text:  #0F172A;
-  --text2: #475569;
-  --text3: #94A3B8;
+  --text:  #1A1033;
+  --text2: #4B4069;
+  --text3: #9B91B8;
 
-  /* ── Datman navy-blue accent ── */
-  --accent:  #1D4ED8;
-  --accent2: #2563EB;
+  /* ── Vision violet accent ── */
+  --accent:  #7C3AED;
+  --accent2: #8B5CF6;
 
-  /* ── Sidebar (dark navy) ── */
-  --sb-bg:      #0C1829;
-  --sb-bg2:     #132035;
-  --sb-text:    #E2E8F0;
-  --sb-text2:   #94A3B8;
-  --sb-text3:   #4B607C;
-  --sb-border:  rgba(255,255,255,0.07);
-  --sb-active:  rgba(59,130,246,0.18);
-  --sb-active-text: #93C5FD;
-  --sb-hover:   rgba(255,255,255,0.05);
+  /* ── Sidebar — deep purple-black (Vision's body) ── */
+  --sb-bg:         #0D0820;
+  --sb-bg2:        #160D30;
+  --sb-text:       #E2D9F3;
+  --sb-text2:      #A78BCA;
+  --sb-text3:      #4B3870;
+  --sb-border:     rgba(139,92,246,0.14);
+  --sb-active:     rgba(139,92,246,0.22);
+  --sb-active-text:#C4B5FD;
+  --sb-hover:      rgba(139,92,246,0.08);
 
   /* ── Semantic colours ── */
-  --green:  #16A34A;
-  --red:    #DC2626;
-  --yellow: #D97706;
-  --blue:   #2563EB;
+  --green:  #10B981;   /* Mind Stone */
+  --red:    #EF4444;
+  --yellow: #F59E0B;   /* Vision gold */
+  --blue:   #6366F1;   /* indigo */
 
   --card-radius: 10px;
   --font-head: 'Syne', sans-serif;
-  --font-body: 'Inter', sans-serif;
+  --font-body: 'Space Grotesk', sans-serif;
 }
 
 body {
@@ -67,7 +67,7 @@ input, select, textarea {
 }
 input:focus, select:focus, textarea:focus {
   border-color: var(--accent2);
-  box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+  box-shadow: 0 0 0 3px rgba(139,92,246,0.12);
 }
 
 button {

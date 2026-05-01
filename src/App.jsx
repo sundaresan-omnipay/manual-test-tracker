@@ -514,12 +514,12 @@ export default function App() {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'var(--sb-bg)' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ width: 48, height: 48, borderRadius: 14, background: 'linear-gradient(135deg, #1D4ED8 0%, #0EA5E9 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', boxShadow: '0 4px 16px rgba(29,78,216,0.4)' }}>
-            <Radio size={22} color="#fff" strokeWidth={2} />
+          <div style={{ width: 48, height: 48, borderRadius: 14, background: 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', boxShadow: '0 0 24px rgba(245,158,11,0.5), 0 4px 12px rgba(0,0,0,0.3)' }}>
+            <Radio size={22} color="#1A1033" strokeWidth={2.5} />
           </div>
-          <p style={{ fontSize: '16px', fontWeight: 700, color: '#F8FAFC', fontFamily: 'var(--font-head)', marginBottom: 6 }}>Beacon</p>
-          <p style={{ fontSize: '12px', color: '#4B607C', display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center' }}>
-            <RefreshCw size={12} className="spin" style={{ color: '#2563EB' }} /> Loading…
+          <p style={{ fontSize: '17px', fontWeight: 800, color: '#F8F4FF', fontFamily: 'var(--font-head)', marginBottom: 6, letterSpacing: '-0.02em' }}>Beacon</p>
+          <p style={{ fontSize: '12px', color: '#4B3870', display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center', fontFamily: 'var(--font-body)' }}>
+            <RefreshCw size={12} className="spin" style={{ color: '#8B5CF6' }} /> Loading…
           </p>
         </div>
       </div>
