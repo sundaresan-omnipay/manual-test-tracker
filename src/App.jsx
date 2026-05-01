@@ -141,6 +141,7 @@ export default function App() {
 
   const loadFromSupabase = async () => {
     setDbLoading(true)
+    let autoSyncConfig = null
     try {
       const { data: relData, error: rErr } = await supabase
         .from('beacon_releases').select('*').order('created_at', { ascending: false })
@@ -178,7 +179,7 @@ export default function App() {
           })),
       })))
 
-      // Load shared test library so coverage works for everyone
+      // Show cached test library immediately so coverage is visible while GitHub syncs
       const { data: libData } = await supabase.from('beacon_test_library').select('*')
       if (libData?.length) {
         setTestCases(libData.map(tc => ({
@@ -195,11 +196,48 @@ export default function App() {
         })
         setCsvSources(Object.values(sourceMap))
       }
+
+      // Load shared GitHub config — merge URL/branch/folders with local token
+      const { data: cfgData } = await supabase.from('beacon_config').select('*')
+      if (cfgData?.length) {
+        const map = Object.fromEntries(cfgData.map(r => [r.key, r.value]))
+        const shared = {
+          url: map.github_url || '', branch: map.github_branch || 'main',
+          folders: map.github_folders || '', file: map.github_file || '',
+          mode: map.github_mode || 'folders',
+        }
+        if (shared.url) {
+          const merged = { ...shared, token: loadGithubConfig().token || '' }
+          setGithubConfig(merged)
+          saveGithubConfig(merged)
+          autoSyncConfig = merged
+        }
+      }
+      // Fall back to local config if no shared config saved yet
+      if (!autoSyncConfig) {
+        const local = loadGithubConfig()
+        if (local.url && (local.mode === 'folders' ? local.folders : local.file))
+          autoSyncConfig = local
+      }
     } catch (e) {
       console.error('Supabase load error:', e)
     } finally {
       setDbLoading(false)
     }
+    // Auto-sync from GitHub in background — app is already visible with cached data
+    if (autoSyncConfig?.url) fetchFromGithub(autoSyncConfig)
+  }
+
+  const saveConfigToSupabase = async (cfg) => {
+    const rows = [
+      { key: 'github_url',     value: cfg.url     || '' },
+      { key: 'github_branch',  value: cfg.branch  || 'main' },
+      { key: 'github_folders', value: cfg.folders || '' },
+      { key: 'github_file',    value: cfg.file    || '' },
+      { key: 'github_mode',    value: cfg.mode    || 'folders' },
+    ]
+    const { error } = await supabase.from('beacon_config').upsert(rows, { onConflict: 'key' })
+    if (error) console.error('Failed to save config:', error)
   }
 
   const saveTestCasesToSupabase = async (tcs) => {
@@ -319,12 +357,6 @@ export default function App() {
       setLoadingCsv(false)
       setLoadProgress('')
     }
-  }, [])
-
-  useEffect(() => {
-    const cfg = githubConfig
-    const hasGithub = cfg.url && (cfg.mode === 'folders' ? cfg.folders : cfg.file)
-    if (hasGithub) fetchFromGithub()
   }, [])
 
   const activeRelease = releases.find(r => r.id === activeReleaseId)
@@ -535,7 +567,7 @@ export default function App() {
         {activeView === 'settings' && (
           <SettingsView
             config={githubConfig}
-            onSave={(cfg) => { setGithubConfig(cfg); saveGithubConfig(cfg); fetchFromGithub(cfg) }}
+            onSave={(cfg) => { setGithubConfig(cfg); saveGithubConfig(cfg); saveConfigToSupabase(cfg); fetchFromGithub(cfg) }}
             onLoadFiles={loadLocalFiles}
             loading={loadingCsv}
             progress={loadProgress}
