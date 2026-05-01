@@ -47,19 +47,25 @@
 .logo-text { display: flex; flex-direction: column; gap: 1px; }
 .logo-name {
   font-family: var(--font-head);
-  font-size: 17px;
-  font-weight: 700;
-  color: #F8F4FF;
-  letter-spacing: -0.01em;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
   line-height: 1;
+  background: linear-gradient(135deg, #F59E0B 0%, #FDE68A 45%, #EDE8FF 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(0 0 8px rgba(245,158,11,0.5));
 }
 .logo-tagline {
-  font-size: 9px;
+  font-size: 8.5px;
   color: var(--sb-text3);
   text-transform: uppercase;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.22em;
   font-weight: 600;
   line-height: 1;
+  margin-top: 1px;
 }
 
 .nav-section-label {
@@ -87,8 +93,9 @@
   border-radius: 8px;
   background: transparent;
   color: var(--sb-text2);
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 500;
+  letter-spacing: 0.03em;
   text-align: left;
   width: 100%;
   transition: all 0.18s;
@@ -97,8 +104,10 @@
 .nav-item:hover { background: var(--sb-hover); color: var(--sb-text); }
 .nav-item.active {
   background: var(--sb-active);
-  color: var(--sb-active-text);
+  color: #DDD6FE;
   font-weight: 600;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 14px rgba(196,181,253,0.5);
   box-shadow: 0 0 12px rgba(139,92,246,0.2), inset 0 0 12px rgba(139,92,246,0.05);
   border: 1px solid rgba(139,92,246,0.22);
 }
@@ -560,7 +569,9 @@
   display: flex; align-items: center; justify-content: space-between;
   flex-wrap: wrap; gap: 8px; margin-bottom: 4px;
 }
+.run-toolbar-left { display: flex; flex-direction: column; gap: 6px; flex: 1; }
 .filter-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+.filter-row-label { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text3); }
 
 .filter-chip {
   font-size: 11px; padding: 4px 12px; font-weight: 500;
@@ -654,6 +665,27 @@
 .empty-state p { font-size: 15px; color: var(--text2); font-weight: 700; }
 .empty-state span { font-size: 12px; }
 .empty-state.sm { padding: 2rem; }
+
+/* ── Copy summary button ── */
+.btn-copy {
+  background: rgba(16,185,129,0.08);
+  color: #34D399;
+  border: 1px solid rgba(16,185,129,0.3);
+  padding: 7px 14px;
+  display: flex; align-items: center; gap: 6px;
+  font-weight: 600; font-size: 12px; border-radius: 8px;
+  transition: all 0.2s; white-space: nowrap;
+}
+.btn-copy:hover { background: rgba(16,185,129,0.14); box-shadow: 0 0 12px rgba(16,185,129,0.2); }
+.btn-copy.copied { background: rgba(16,185,129,0.18); box-shadow: 0 0 16px rgba(16,185,129,0.3); }
+
+/* ── Priority filter chips ── */
+.filter-chip.pri-p0 { color: #FCA5A5; border-color: rgba(248,113,113,0.4); background: rgba(248,113,113,0.08); }
+.filter-chip.pri-p0.active { color: #FCA5A5; border-color: rgba(248,113,113,0.7); background: rgba(248,113,113,0.16); box-shadow: 0 0 10px rgba(248,113,113,0.2); }
+.filter-chip.pri-p1 { color: #FCD34D; border-color: rgba(251,191,36,0.4); background: rgba(251,191,36,0.08); }
+.filter-chip.pri-p1.active { color: #FCD34D; border-color: rgba(251,191,36,0.7); background: rgba(251,191,36,0.16); box-shadow: 0 0 10px rgba(251,191,36,0.2); }
+.filter-chip.pri-p2 { color: #93C5FD; border-color: rgba(59,158,255,0.4); background: rgba(59,158,255,0.08); }
+.filter-chip.pri-p2.active { color: #93C5FD; border-color: rgba(59,158,255,0.7); background: rgba(59,158,255,0.16); box-shadow: 0 0 10px rgba(59,158,255,0.2); }
 
 /* ── Animations ── */
 .spin { animation: spin 0.8s linear infinite; }
