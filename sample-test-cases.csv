@@ -1,0 +1,13 @@
+id,title,category,description
+TC-001,Successful card payment - Visa,Payments,Complete a full Visa card payment end to end and verify shopper statement
+TC-002,Successful card payment - Mastercard,Payments,Complete a full Mastercard payment and verify transaction in dashboard
+TC-003,3DS challenge flow,Payments,Test 3DS redirect challenge and verify return handling after authentication
+TC-004,3DS frictionless flow,Payments,Test frictionless 3DS where no challenge is presented to the shopper
+TC-005,Expired card decline,Payments,Enter an expired card and verify correct decline message is shown
+TC-006,Insufficient funds decline,Payments,Use a test card that triggers insufficient funds and verify error handling
+TC-007,Partial refund,Refunds,Process a partial refund on a completed transaction and verify amount
+TC-008,Full refund,Refunds,Process a full refund and verify transaction status updates correctly
+TC-009,Split payment - reseller commission,Resellers,Verify commission split is correctly applied for reseller transactions
+TC-010,Moto payment,Payments,Process a MOTO (mail order telephone order) payment manually
+TC-011,Payment link expiry,Payment Links,Verify payment link expires after configured time and shows correct error
+TC-012,Duplicate payment prevention,Payments,Attempt to submit same payment twice and verify only one is processed

@@ -1,0 +1,19 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0a0a0f; --bg2: #111118; --bg3: #18181f;
+  --border: #2a2a35; --border2: #3a3a48;
+  --text: #e8e8f0; --text2: #9090a8; --text3: #5a5a70;
+  --accent: #7c6dfa; --accent2: #a594ff;
+  --green: #22c97a; --red: #f04e6a; --yellow: #f0b429; --blue: #3b9eff;
+  --card-radius: 12px;
+  --font-head: 'Syne', sans-serif;
+  --font-mono: 'DM Mono', monospace;
+}
+body { background: var(--bg); color: var(--text); font-family: var(--font-mono); min-height: 100vh; }
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--bg2); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+input, select, textarea { font-family: var(--font-mono); background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 8px 12px; font-size: 13px; outline: none; transition: border-color 0.2s; width: 100%; }
+input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+button { font-family: var(--font-mono); cursor: pointer; border: none; border-radius: 8px; font-size: 13px; transition: all 0.15s; }
+button:active { transform: scale(0.97); }
