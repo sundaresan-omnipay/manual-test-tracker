@@ -177,10 +177,45 @@ export default function App() {
             updatedAt: tc.updated_at,
           })),
       })))
+
+      // Load shared test library so coverage works for everyone
+      const { data: libData } = await supabase.from('beacon_test_library').select('*')
+      if (libData?.length) {
+        setTestCases(libData.map(tc => ({
+          id: tc.tc_id, title: tc.title, module: tc.module,
+          submodule: tc.submodule, priority: tc.priority, labels: tc.labels,
+          precondition: tc.precondition, testSteps: tc.test_steps,
+          expectedResult: tc.expected_result, source: tc.source,
+        })))
+        const sourceMap = {}
+        libData.forEach(tc => {
+          const s = tc.source || '(unknown)'
+          if (!sourceMap[s]) sourceMap[s] = { name: s, count: 0, total: 0 }
+          sourceMap[s].count++; sourceMap[s].total++
+        })
+        setCsvSources(Object.values(sourceMap))
+      }
     } catch (e) {
       console.error('Supabase load error:', e)
     } finally {
       setDbLoading(false)
+    }
+  }
+
+  const saveTestCasesToSupabase = async (tcs) => {
+    if (!tcs.length) return
+    setLoadProgress('Saving to Supabase…')
+    const rows = tcs.map(tc => ({
+      tc_id: tc.id, title: tc.title, module: tc.module, submodule: tc.submodule,
+      priority: tc.priority, labels: tc.labels, precondition: tc.precondition,
+      test_steps: tc.testSteps, expected_result: tc.expectedResult,
+      source: tc.source, synced_at: new Date().toISOString(),
+    }))
+    const BATCH = 200
+    for (let i = 0; i < rows.length; i += BATCH) {
+      const { error } = await supabase.from('beacon_test_library')
+        .upsert(rows.slice(i, i + BATCH), { onConflict: 'tc_id' })
+      if (error) console.error('Failed to save test library:', error)
     }
   }
 
@@ -253,6 +288,7 @@ export default function App() {
       setTestCases(allTcs)
       setCsvSources(sources)
       if (errors.length) setCsvError(errors.join('\n'))
+      await saveTestCasesToSupabase(allTcs)
     } catch (e) {
       setCsvError(e.message)
     } finally {
@@ -276,6 +312,7 @@ export default function App() {
       }
       setTestCases(allTcs)
       setCsvSources(sources)
+      await saveTestCasesToSupabase(allTcs)
     } catch (e) {
       setCsvError(e.message)
     } finally {
