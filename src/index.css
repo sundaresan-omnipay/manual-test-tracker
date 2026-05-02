@@ -2,30 +2,30 @@
 
 :root {
   /* ── Deep space base ── */
-  --bg:      #07041A;
-  --bg2:     rgba(18, 9, 40, 0.8);
-  --bg3:     rgba(28, 14, 58, 0.65);
-  --border:  rgba(139,92,246,0.16);
-  --border2: rgba(139,92,246,0.35);
+  --bg:      #100E2A;
+  --bg2:     rgba(22, 18, 50, 0.92);
+  --bg3:     rgba(32, 26, 66, 0.80);
+  --border:  rgba(139,92,246,0.22);
+  --border2: rgba(139,92,246,0.42);
 
   /* ── Text ── */
-  --text:  #EDE8FF;
-  --text2: #9B8EC4;
-  --text3: #4E4272;
+  --text:  #F0EEFF;
+  --text2: #B0A4D4;
+  --text3: #6B5FA0;
 
   /* ── Vision violet ── */
   --accent:  #8B5CF6;
   --accent2: #A78BFA;
 
-  /* ── Sidebar — pure dark ── */
-  --sb-bg:         #040211;
-  --sb-text:       #DDD6FE;
-  --sb-text2:      #7B6FA8;
-  --sb-text3:      #352D55;
-  --sb-border:     rgba(139,92,246,0.1);
-  --sb-active:     rgba(139,92,246,0.18);
+  /* ── Sidebar ── */
+  --sb-bg:         #0C0A22;
+  --sb-text:       #E8E2FF;
+  --sb-text2:      #9284C0;
+  --sb-text3:      #4E447A;
+  --sb-border:     rgba(139,92,246,0.15);
+  --sb-active:     rgba(139,92,246,0.22);
   --sb-active-text:#C4B5FD;
-  --sb-hover:      rgba(139,92,246,0.07);
+  --sb-hover:      rgba(139,92,246,0.10);
 
   /* ── Semantic ── */
   --green:  #10B981;

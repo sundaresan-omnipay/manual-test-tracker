@@ -5,7 +5,7 @@ import {
   RefreshCw, ChevronDown, ChevronUp, Search,
   Download, Settings, X, AlertCircle, SkipForward, Layers,
   Upload, Tag, FileText, ChevronRight, Filter, BarChart2,
-  Radio, User, UserCheck, Copy
+  Radio, User, UserCheck, Copy, TrendingUp, Zap
 } from 'lucide-react'
 import { supabase } from './lib/supabase.js'
 
@@ -127,6 +127,7 @@ export default function App() {
   const [activeView, setActiveView]           = useState('releases')
   const [activeReleaseId, setActiveReleaseId] = useState(null)
   const [testCases, setTestCases]             = useState([])
+  const [allTestCases, setAllTestCases]       = useState([])
   const [csvSources, setCsvSources]           = useState([])
   const [loadingCsv, setLoadingCsv]           = useState(false)
   const [loadProgress, setLoadProgress]       = useState('')
@@ -261,8 +262,11 @@ export default function App() {
   }
 
   const applyRows = (rows, sourceName) => {
-    const filtered = rows.filter(isCantBeAutomated).map(normalizeTC)
-    return { filtered, source: { name: sourceName, count: filtered.length, total: rows.length } }
+    // Stamp every row with source_csv so normalizeTC gets a path even from local uploads
+    const tagged = rows.map(r => ({ ...r, source_csv: r['source_csv'] || sourceName }))
+    const all = tagged.map(normalizeTC)
+    const filtered = tagged.filter(isCantBeAutomated).map(normalizeTC)
+    return { filtered, all, source: { name: sourceName, count: filtered.length, total: rows.length } }
   }
 
   const ghHeaders = (token) => token ? { Authorization: `token ${token}` } : {}
@@ -295,7 +299,7 @@ export default function App() {
     try {
       const { owner, repo } = parseGithubRepo(cfg.url)
       const { branch = 'main', token = '', mode = 'folders' } = cfg
-      const allTcs = []; const sources = []; const errors = []
+      const allTcs = []; const allTcsAll = []; const sources = []; const errors = []
 
       if (mode === 'folders') {
         const folderList = (cfg.folders || '').split('\n').map(s => s.trim()).filter(Boolean)
@@ -309,8 +313,9 @@ export default function App() {
             for (let ci = 0; ci < files.length; ci++) {
               const f = files[ci]
               setLoadProgress(`${folder}/${f.name} (${ci + 1}/${files.length})`)
-              const { filtered, source } = await fetchOneFile(f.download_url, `${folder}/${f.name}`, token)
+              const { filtered, all, source } = await fetchOneFile(f.download_url, `${folder}/${f.name}`, token)
               allTcs.push(...filtered)
+              allTcsAll.push(...all)
               sources.push(source)
             }
           } catch (e) {
@@ -321,12 +326,14 @@ export default function App() {
         if (!cfg.file) throw new Error('Enter a CSV file path')
         setLoadProgress(`Fetching ${cfg.file}…`)
         const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${cfg.file}`
-        const { filtered, source } = await fetchOneFile(rawUrl, cfg.file, token)
+        const { filtered, all, source } = await fetchOneFile(rawUrl, cfg.file, token)
         allTcs.push(...filtered)
+        allTcsAll.push(...all)
         sources.push(source)
       }
 
       setTestCases(allTcs)
+      setAllTestCases(allTcsAll)
       setCsvSources(sources)
       if (errors.length) setCsvError(errors.join('\n'))
       await saveTestCasesToSupabase(allTcs)
@@ -342,16 +349,18 @@ export default function App() {
     if (!files?.length) return
     setLoadingCsv(true); setCsvError(''); setLoadProgress('')
     try {
-      const allTcs = []; const sources = []
+      const allTcs = []; const allTcsAll = []; const sources = []
       for (let i = 0; i < files.length; i++) {
         const file = files[i]
         setLoadProgress(`Parsing ${file.name}… (${i + 1}/${files.length})`)
         const rows = await parseCsvText(await file.text())
-        const { filtered, source } = applyRows(rows, file.name)
+        const { filtered, all, source } = applyRows(rows, file.name)
         allTcs.push(...filtered)
+        allTcsAll.push(...all)
         sources.push(source)
       }
       setTestCases(allTcs)
+      setAllTestCases(allTcsAll)
       setCsvSources(sources)
       await saveTestCasesToSupabase(allTcs)
     } catch (e) {
@@ -590,11 +599,27 @@ export default function App() {
         <nav className="nav">
           <button className={`nav-item ${activeView === 'releases' || activeView === 'release-detail' ? 'active' : ''}`}
             onClick={() => setActiveView('releases')}>
-            <CheckCircle size={15} /> Releases
+            <CheckCircle size={15} />
+            <div className="nav-item-text">
+              <span className="nav-item-label">Releases</span>
+              <span className="nav-item-sub">Track &amp; manage</span>
+            </div>
           </button>
           <button className={`nav-item ${activeView === 'coverage' ? 'active' : ''}`}
             onClick={() => setActiveView('coverage')}>
-            <BarChart2 size={15} /> Coverage
+            <BarChart2 size={15} />
+            <div className="nav-item-text">
+              <span className="nav-item-label">Manual Cases</span>
+              <span className="nav-item-sub">Can't be automated</span>
+            </div>
+          </button>
+          <button className={`nav-item ${activeView === 'analytics' ? 'active' : ''}`}
+            onClick={() => setActiveView('analytics')}>
+            <TrendingUp size={15} />
+            <div className="nav-item-text">
+              <span className="nav-item-label">Full Coverage</span>
+              <span className="nav-item-sub">All providers &amp; methods</span>
+            </div>
           </button>
           <button className={`nav-item ${activeView === 'settings' ? 'active' : ''}`}
             onClick={() => setActiveView('settings')}>
@@ -646,6 +671,9 @@ export default function App() {
         )}
         {activeView === 'coverage' && (
           <CoverageView testCases={testCases} />
+        )}
+        {activeView === 'analytics' && (
+          <AnalyticsView allTestCases={allTestCases} testCases={testCases} releases={releases} />
         )}
         {activeView === 'release-detail' && activeRelease && (
           <ReleaseDetailView
@@ -924,6 +952,348 @@ function CoverageView({ testCases }) {
   )
 }
 
+// ── Analytics helpers ──────────────────────────────────────────────────────────
+function parseSource(src) {
+  if (!src) return { provider: '__unspecified__', file: '' }
+  const parts = src.split('/')
+  if (parts.length > 1) return { provider: parts[0], file: parts.slice(1).join('/') }
+  return { provider: src.replace(/\.csv$/i, ''), file: src }
+}
+
+function classifyAuto(status) {
+  const s = (status || '').toLowerCase().replace(/['']/g, "'").trim()
+  if (s.includes("can't be automated") || s.includes("cant be automated")) return 'cant_automate'
+  if (s === 'automated' || s.startsWith('automated')) return 'automated'
+  if (s === 'pending') return 'pending'
+  if (s.includes('prod monitoring') || s.includes('production monitoring')) return 'prod_monitoring'
+  if (s.includes('out of scope')) return 'out_of_scope'
+  if (s === '') return 'unclassified'
+  return 'unclassified'
+}
+
+const AUTO_META = {
+  cant_automate:   { label: "Can't Automate",  color: '#F07A6E' },
+  automated:       { label: 'Automated',        color: '#10B981' },
+  pending:         { label: 'Pending',           color: '#F5C243' },
+  prod_monitoring: { label: 'Prod Monitoring',  color: '#34D9B3' },
+  out_of_scope:    { label: 'Out of Scope',     color: '#818CF8' },
+  unclassified:    { label: 'Unclassified',     color: 'rgba(139,92,246,0.35)' },
+}
+
+function prettifyProvider(folder) {
+  const map = {
+    adyen_direct_intergration: 'Adyen Direct Integration',
+    adyen_direct_integration:  'Adyen Direct Integration',
+    Cardstream:                'Cardstream',
+    Checkout:                  'Checkout.com',
+    __unspecified__:           'Unspecified Source',
+  }
+  return map[folder] || folder.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
+function StackedBar({ segments, total, height = 10 }) {
+  if (!total) return null
+  return (
+    <div style={{ display: 'flex', width: '100%', height, borderRadius: height / 2, overflow: 'hidden', background: 'rgba(139,92,246,0.08)' }}>
+      {segments.filter(s => s.value > 0).map((seg, i) => (
+        <div key={i} style={{ width: `${(seg.value / total) * 100}%`, background: seg.color, minWidth: 2, transition: 'width 0.6s ease' }} />
+      ))}
+    </div>
+  )
+}
+
+// ── Analytics View ─────────────────────────────────────────────────────────────
+function AnalyticsView({ allTestCases, testCases, releases }) {
+  const source     = allTestCases.length > 0 ? allTestCases : testCases
+  const hasFullData = allTestCases.length > 0
+  const total      = source.length
+
+  // automation status counts
+  const autoGroups = { cant_automate: 0, automated: 0, pending: 0, prod_monitoring: 0, out_of_scope: 0, unclassified: 0 }
+  source.forEach(tc => {
+    const cat = hasFullData ? classifyAuto(tc.automationStatus) : 'cant_automate'
+    if (cat in autoGroups) autoGroups[cat]++
+    else autoGroups.unclassified++
+  })
+
+  // provider → file hierarchy
+  const hierarchy = {}
+  source.forEach(tc => {
+    const { provider, file } = parseSource(tc.source)
+    const cat = hasFullData ? classifyAuto(tc.automationStatus) : 'cant_automate'
+    const p = (tc.priority || '').toUpperCase()
+    if (!hierarchy[provider]) hierarchy[provider] = { total: 0, cant_automate: 0, automated: 0, pending: 0, prod_monitoring: 0, out_of_scope: 0, unclassified: 0, p0: 0, p1: 0, p2: 0, files: {} }
+    hierarchy[provider].total++
+    if (cat in hierarchy[provider]) hierarchy[provider][cat]++
+    else hierarchy[provider].unclassified++
+    if (p === 'P0') hierarchy[provider].p0++
+    else if (p === 'P1') hierarchy[provider].p1++
+    else if (p === 'P2') hierarchy[provider].p2++
+    if (file) {
+      const fkey = file.replace(/\.csv$/i, '')
+      if (!hierarchy[provider].files[fkey]) hierarchy[provider].files[fkey] = { total: 0, cant_automate: 0, automated: 0, pending: 0, prod_monitoring: 0, out_of_scope: 0, unclassified: 0, p0: 0, p1: 0, p2: 0 }
+      hierarchy[provider].files[fkey].total++
+      if (cat in hierarchy[provider].files[fkey]) hierarchy[provider].files[fkey][cat]++
+      else hierarchy[provider].files[fkey].unclassified++
+      if (p === 'P0') hierarchy[provider].files[fkey].p0++
+      else if (p === 'P1') hierarchy[provider].files[fkey].p1++
+      else if (p === 'P2') hierarchy[provider].files[fkey].p2++
+    }
+  })
+
+  // per-method (module) stats
+  const byMethod = {}
+  source.forEach(tc => {
+    const key = tc.module || 'Uncategorised'
+    if (!byMethod[key]) byMethod[key] = { total: 0, cant_automate: 0, automated: 0, pending: 0, prod_monitoring: 0, out_of_scope: 0, unclassified: 0, p0: 0, p1: 0, p2: 0 }
+    byMethod[key].total++
+    const mcat = hasFullData ? classifyAuto(tc.automationStatus) : 'cant_automate'
+    if (mcat in byMethod[key]) byMethod[key][mcat]++
+    else byMethod[key].unclassified++
+    const p = (tc.priority || '').toUpperCase()
+    if (p === 'P0') byMethod[key].p0++
+    else if (p === 'P1') byMethod[key].p1++
+    else if (p === 'P2') byMethod[key].p2++
+  })
+
+  // release coverage
+  const releaseTCsAll = releases.flatMap(r => r.testCases)
+
+  const releaseStatusByProvider = {}
+  releaseTCsAll.forEach(tc => {
+    const { provider } = parseSource(tc.source)
+    if (!releaseStatusByProvider[provider]) releaseStatusByProvider[provider] = { pass: 0, fail: 0, skip: 0, pending: 0 }
+    releaseStatusByProvider[provider][tc.status || 'pending']++
+  })
+
+  const providerEntries = Object.entries(hierarchy).sort((a, b) => b[1].total - a[1].total)
+  const methodEntries   = Object.entries(byMethod).sort((a, b) => b[1].total - a[1].total)
+
+  const autoSegments = Object.entries(AUTO_META).map(([key, m]) => ({ label: m.label, value: autoGroups[key], color: m.color }))
+
+  if (!total) {
+    return (
+      <div className="view">
+        <div className="view-header">
+          <div><h1>Analytics</h1><p className="subtitle">Provider &amp; method coverage insights</p></div>
+        </div>
+        <div className="empty-state">
+          <TrendingUp size={32} strokeWidth={1} />
+          <p>No test data available</p>
+          <span>Sync your CSV files from GitHub or upload them in Settings</span>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="view an-view">
+      <div className="view-header">
+        <div>
+          <h1>Analytics</h1>
+          <p className="subtitle">
+            {total.toLocaleString()} test cases · {providerEntries.length} provider{providerEntries.length !== 1 ? 's' : ''} · {Object.values(hierarchy).reduce((s, d) => s + Object.keys(d.files).length, 0)} files · {methodEntries.length} method{methodEntries.length !== 1 ? 's' : ''}
+          </p>
+        </div>
+        {!hasFullData && (
+          <span className="an-sync-badge">
+            <Zap size={12} /> Sync from GitHub for full automation breakdown
+          </span>
+        )}
+      </div>
+
+      {/* ── Summary stat cards ── */}
+      <div className="an-stat-row">
+        <div className="an-stat-card">
+          <div className="an-stat-value" style={{ color: 'var(--accent2)' }}>{total.toLocaleString()}</div>
+          <div className="an-stat-label">Total Test Cases</div>
+        </div>
+        {Object.entries(AUTO_META).map(([key, m]) => (
+          <div key={key} className="an-stat-card">
+            <div className="an-stat-value" style={{ color: m.color }}>{autoGroups[key]}</div>
+            <div className="an-stat-label">{m.label}</div>
+            <div className="an-stat-pct" style={{ color: m.color }}>{total ? Math.round(autoGroups[key] / total * 100) : 0}%</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Provider + Automation donut row ── */}
+      <div className="cov-charts-row">
+
+        {/* Provider → file hierarchy */}
+        <div className="cov-card" style={{ flex: 2 }}>
+          <div className="cov-card-title">Coverage by Provider &amp; File</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+            {providerEntries.map(([provider, data]) => {
+              const segs = Object.entries(AUTO_META).map(([k, m]) => ({ label: m.label, value: data[k], color: m.color }))
+              const fileEntries = Object.entries(data.files).sort((a, b) => b[1].total - a[1].total)
+              const inRelUniq = new Set(releaseTCsAll.filter(tc => parseSource(tc.source).provider === provider).map(tc => tc.id)).size
+              const relPct = data.total ? Math.round(inRelUniq / data.total * 100) : 0
+              return (
+                <div key={provider}>
+                  {/* Provider row */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7 }}>
+                    <span style={{ fontSize: 14, color: 'var(--text)', fontWeight: 800, letterSpacing: '-0.01em' }}>
+                      {prettifyProvider(provider)}
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {data.p0 > 0 && <span className="cov-pill p0">P0 {data.p0}</span>}
+                      {data.p1 > 0 && <span className="cov-pill p1">P1 {data.p1}</span>}
+                      {data.p2 > 0 && <span className="cov-pill p2">P2 {data.p2}</span>}
+                      <span style={{ fontSize: 14, color: 'var(--text)', fontWeight: 700, marginLeft: 4 }}>{data.total}</span>
+                    </div>
+                  </div>
+                  <StackedBar segments={segs} total={data.total} height={12} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5, marginBottom: fileEntries.length > 0 ? 10 : 0 }}>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                      {segs.filter(s => s.value > 0).map(s => (
+                        <span key={s.label} style={{ fontSize: 10, color: s.color, fontWeight: 600 }}>{s.label}: {s.value}</span>
+                      ))}
+                    </div>
+                    {inRelUniq > 0 && (
+                      <span style={{ fontSize: 10, color: relPct > 70 ? 'var(--green)' : 'var(--text3)', fontWeight: 600 }}>
+                        {inRelUniq}/{data.total} in releases ({relPct}%)
+                      </span>
+                    )}
+                  </div>
+
+                  {/* File sub-rows (indented) */}
+                  {fileEntries.length > 0 && (
+                    <div style={{ paddingLeft: 14, borderLeft: '2px solid rgba(139,92,246,0.2)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {fileEntries.map(([fname, fdata]) => {
+                        const fsegs = Object.entries(AUTO_META).map(([k, m]) => ({ label: m.label, value: fdata[k], color: m.color }))
+                        const fInRel = new Set(releaseTCsAll.filter(tc => {
+                          const { provider: p, file: f } = parseSource(tc.source)
+                          return p === provider && f.replace(/\.csv$/i, '') === fname
+                        }).map(tc => tc.id)).size
+                        return (
+                          <div key={fname}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <ChevronRight size={11} style={{ color: 'var(--text3)', flexShrink: 0 }} />
+                                <span style={{ fontSize: 11.5, color: 'var(--text2)', fontWeight: 600 }}>{fname}</span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                {fdata.p0 > 0 && <span className="cov-pill p0" style={{ fontSize: 9 }}>P0 {fdata.p0}</span>}
+                                {fdata.p1 > 0 && <span className="cov-pill p1" style={{ fontSize: 9 }}>P1 {fdata.p1}</span>}
+                                {fdata.p2 > 0 && <span className="cov-pill p2" style={{ fontSize: 9 }}>P2 {fdata.p2}</span>}
+                                <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 700 }}>{fdata.total}</span>
+                                {fInRel > 0 && <span style={{ fontSize: 10, color: 'var(--green)', fontWeight: 600 }}>✓ {fInRel} tested</span>}
+                              </div>
+                            </div>
+                            <StackedBar segments={fsegs} total={fdata.total} height={7} />
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          {/* Legend */}
+          <div style={{ display: 'flex', gap: 16, marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
+            {Object.entries(AUTO_META).map(([k, m]) => (
+              <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <div style={{ width: 10, height: 10, borderRadius: 2, background: m.color }} />
+                <span style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 600 }}>{m.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Automation Status donut */}
+        <div className="cov-card cov-donut-card">
+          <div className="cov-card-title">Automation Status</div>
+          <DonutChart segments={autoSegments} />
+          <div className="cov-legend">
+            {autoSegments.filter(s => s.value > 0).map(seg => (
+              <div key={seg.label} className="cov-legend-row">
+                <span className="cov-legend-dot" style={{ background: seg.color }} />
+                <span className="cov-legend-label">{seg.label}</span>
+                <span className="cov-legend-val">{seg.value}</span>
+                <span className="cov-legend-pct">{Math.round(seg.value / total * 100)}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Method (module) coverage ── */}
+      <div className="cov-card">
+        <div className="cov-card-title">Coverage by Method / Module</div>
+        <div className="an-method-table">
+          <div className="an-method-head">
+            <span>Method</span>
+            <span style={{ textAlign: 'right' }}>Count</span>
+            <span>Automation Breakdown</span>
+            <span>Priority</span>
+            <span style={{ textAlign: 'right' }}>In Releases</span>
+          </div>
+          {methodEntries.map(([mod, data]) => {
+            const segs = Object.entries(AUTO_META).map(([k, m]) => ({ label: m.label, value: data[k], color: m.color }))
+            const inRelUniq = new Set(releaseTCsAll.filter(tc => tc.module === mod).map(tc => tc.id)).size
+            return (
+              <div key={mod} className="an-method-row">
+                <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={mod}>{mod}</span>
+                <span style={{ fontSize: 13, color: 'var(--text)', fontWeight: 700, textAlign: 'right' }}>{data.total}</span>
+                <StackedBar segments={segs} total={data.total} height={8} />
+                <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                  {data.p0 > 0 && <span className="cov-pill p0">P0 {data.p0}</span>}
+                  {data.p1 > 0 && <span className="cov-pill p1">P1 {data.p1}</span>}
+                  {data.p2 > 0 && <span className="cov-pill p2">P2 {data.p2}</span>}
+                </div>
+                <span style={{ fontSize: 11, color: inRelUniq > 0 ? 'var(--green)' : 'var(--text3)', fontWeight: 600, textAlign: 'right' }}>
+                  {inRelUniq > 0 ? `${inRelUniq} tested` : '—'}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* ── Release health by provider ── */}
+      {Object.keys(releaseStatusByProvider).length > 0 && (
+        <div className="cov-card">
+          <div className="cov-card-title">Release Health by Provider</div>
+          <div className="an-release-table">
+            <div className="an-release-head">
+              <span>Provider</span>
+              <span style={{ textAlign: 'center' }}>Pass</span>
+              <span style={{ textAlign: 'center' }}>Fail</span>
+              <span style={{ textAlign: 'center' }}>Skip</span>
+              <span style={{ textAlign: 'center' }}>Pending</span>
+              <span>Pass Rate</span>
+            </div>
+            {Object.entries(releaseStatusByProvider)
+              .sort((a, b) => (b[1].pass + b[1].fail + b[1].skip + b[1].pending) - (a[1].pass + a[1].fail + a[1].skip + a[1].pending))
+              .map(([folder, data]) => {
+                const rowTotal = (data.pass || 0) + (data.fail || 0) + (data.skip || 0) + (data.pending || 0)
+                const passRate = rowTotal ? Math.round((data.pass || 0) / rowTotal * 100) : 0
+                const rateColor = data.fail > 0 ? 'var(--red)' : data.pending > 0 ? 'var(--accent2)' : 'var(--green)'
+                return (
+                  <div key={folder} className="an-release-row">
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{prettifyProvider(folder)}</span>
+                    <span style={{ textAlign: 'center', color: 'var(--green)', fontWeight: 700 }}>{data.pass || 0}</span>
+                    <span style={{ textAlign: 'center', color: 'var(--red)',   fontWeight: 700 }}>{data.fail || 0}</span>
+                    <span style={{ textAlign: 'center', color: 'var(--yellow)',fontWeight: 700 }}>{data.skip || 0}</span>
+                    <span style={{ textAlign: 'center', color: 'var(--text3)', fontWeight: 600 }}>{data.pending || 0}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ flex: 1, height: 6, borderRadius: 3, background: 'rgba(139,92,246,0.08)', overflow: 'hidden' }}>
+                        <div style={{ width: `${passRate}%`, height: '100%', background: 'var(--green)', borderRadius: 3, transition: 'width 0.5s' }} />
+                      </div>
+                      <span style={{ fontSize: 11, color: rateColor, fontWeight: 700, minWidth: 36, textAlign: 'right' }}>{passRate}%</span>
+                    </div>
+                  </div>
+                )
+              })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Settings View ──────────────────────────────────────────────────────────────
 function SettingsView({ config, onSave, onLoadFiles, loading, progress, error, testCasesCount, csvSources }) {
   const [form, setForm]   = useState({ ...DEFAULT_GITHUB_CONFIG, ...config })
@@ -1150,7 +1520,11 @@ function ReleasesView({ releases, onNew, onOpen, onDelete, onClone, getStats, sh
       <div className="view-header">
         <div>
           <h1>Releases</h1>
-          <p className="subtitle">{releases.length} release{releases.length !== 1 ? 's' : ''} tracked</p>
+          <p className="subtitle">
+            {releases.length} release{releases.length !== 1 ? 's' : ''} tracked
+            {releases.length > 0 && ` · ${releases.reduce((s, r) => s + r.testCases.length, 0)} test cases`}
+            {usedEnvs.length > 0 && ` · ${usedEnvs.join(', ')}`}
+          </p>
         </div>
         <button className="btn-primary" onClick={onNew}><Plus size={14} /> New Release</button>
       </div>
