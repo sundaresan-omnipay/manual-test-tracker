@@ -2,30 +2,30 @@
 
 :root {
   /* ── Deep space base ── */
-  --bg:      #100E2A;
-  --bg2:     rgba(22, 18, 50, 0.92);
-  --bg3:     rgba(32, 26, 66, 0.80);
-  --border:  rgba(139,92,246,0.22);
-  --border2: rgba(139,92,246,0.42);
+  --bg:      #14112E;
+  --bg2:     rgba(30, 24, 64, 0.97);
+  --bg3:     rgba(42, 34, 82, 0.95);
+  --border:  rgba(139,92,246,0.30);
+  --border2: rgba(139,92,246,0.55);
 
   /* ── Text ── */
-  --text:  #F0EEFF;
-  --text2: #B0A4D4;
-  --text3: #6B5FA0;
+  --text:  #F4F0FF;
+  --text2: #C8BCEC;
+  --text3: #9888CC;
 
   /* ── Vision violet ── */
   --accent:  #8B5CF6;
-  --accent2: #A78BFA;
+  --accent2: #B49DFA;
 
   /* ── Sidebar ── */
-  --sb-bg:         #0C0A22;
-  --sb-text:       #E8E2FF;
-  --sb-text2:      #9284C0;
-  --sb-text3:      #4E447A;
-  --sb-border:     rgba(139,92,246,0.15);
-  --sb-active:     rgba(139,92,246,0.22);
+  --sb-bg:         #0F0D26;
+  --sb-text:       #EDE8FF;
+  --sb-text2:      #B0A4D8;
+  --sb-text3:      #7D72B0;
+  --sb-border:     rgba(139,92,246,0.22);
+  --sb-active:     rgba(139,92,246,0.26);
   --sb-active-text:#C4B5FD;
-  --sb-hover:      rgba(139,92,246,0.10);
+  --sb-hover:      rgba(139,92,246,0.13);
 
   /* ── Semantic ── */
   --green:  #10B981;
@@ -65,7 +65,7 @@ input, select, textarea {
   transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
   width: 100%;
 }
-input::placeholder, textarea::placeholder { color: var(--text3); }
+input::placeholder, textarea::placeholder { color: var(--text2); opacity: 0.6; }
 input:focus, select:focus, textarea:focus {
   border-color: rgba(139,92,246,0.6);
   background: rgba(139,92,246,0.1);
