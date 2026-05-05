@@ -5,7 +5,7 @@ import {
   RefreshCw, ChevronDown, ChevronUp, Search,
   Download, Settings, X, AlertCircle, SkipForward, Layers,
   Upload, Tag, FileText, ChevronRight, Filter, BarChart2,
-  Radio, User, UserCheck, Copy, TrendingUp, Zap
+  Radio, User, UserCheck, Copy, TrendingUp, Zap, Sparkles, Bot, ThumbsUp, ThumbsDown
 } from 'lucide-react'
 import { supabase } from './lib/supabase.js'
 
@@ -27,6 +27,10 @@ function loadGithubConfig() {
 function saveGithubConfig(cfg) {
   localStorage.setItem(GITHUB_CONFIG_KEY, JSON.stringify(cfg))
 }
+
+const GROK_KEY_STORAGE = 'beacon_groq_key'
+function loadGrokKey() { return localStorage.getItem(GROK_KEY_STORAGE) || '' }
+function saveGrokKey(key) { localStorage.setItem(GROK_KEY_STORAGE, key) }
 
 // Parse owner + repo from a GitHub URL
 function parseGithubRepo(url) {
@@ -123,6 +127,7 @@ function LabelChips({ labels, max = 0 }) {
 export default function App() {
   const [releases, setReleases]               = useState([])
   const [githubConfig, setGithubConfig]       = useState(loadGithubConfig)
+  const [grokKey, setGrokKey]                 = useState(loadGrokKey)
   const [dbLoading, setDbLoading]             = useState(true)
   const [activeView, setActiveView]           = useState('releases')
   const [activeReleaseId, setActiveReleaseId] = useState(null)
@@ -652,6 +657,8 @@ export default function App() {
             error={csvError}
             testCasesCount={testCases.length}
             csvSources={csvSources}
+            grokKey={grokKey}
+            onSaveGrokKey={(k) => { setGrokKey(k); saveGrokKey(k) }}
           />
         )}
         {activeView === 'releases' && (
@@ -692,6 +699,7 @@ export default function App() {
             onRefresh={fetchFromGithub}
             testCasesLoaded={testCases.length > 0}
             onChecklistChange={(key, val) => updateChecklist(activeRelease.id, key, val)}
+            grokKey={grokKey}
           />
         )}
       </main>
@@ -1295,11 +1303,19 @@ function AnalyticsView({ allTestCases, testCases, releases }) {
 }
 
 // ── Settings View ──────────────────────────────────────────────────────────────
-function SettingsView({ config, onSave, onLoadFiles, loading, progress, error, testCasesCount, csvSources }) {
-  const [form, setForm]   = useState({ ...DEFAULT_GITHUB_CONFIG, ...config })
+function SettingsView({ config, onSave, onLoadFiles, loading, progress, error, testCasesCount, csvSources, grokKey, onSaveGrokKey }) {
+  const [form, setForm]       = useState({ ...DEFAULT_GITHUB_CONFIG, ...config })
+  const [grokInput, setGrokInput] = useState(grokKey || '')
+  const [grokSaved, setGrokSaved] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef(null)
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }))
+
+  const handleSaveGrok = () => {
+    onSaveGrokKey(grokInput.trim())
+    setGrokSaved(true)
+    setTimeout(() => setGrokSaved(false), 2000)
+  }
 
   const handleFiles = (files) => {
     const csvFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.csv'))
@@ -1322,6 +1338,35 @@ function SettingsView({ config, onSave, onLoadFiles, loading, progress, error, t
         <div>
           <h1>Settings</h1>
           <p className="subtitle">Only "Can't be automated" rows are loaded — everything else is ignored</p>
+        </div>
+      </div>
+
+      {/* ── Groq AI key ── */}
+      <div className="settings-card" style={{ marginBottom: '1rem' }}>
+        <h3 className="card-title"><Sparkles size={14} /> Groq AI — Test Case Analyser</h3>
+        <p style={{ fontSize: '13px', color: 'var(--text2)', marginBottom: '1rem', lineHeight: 1.6 }}>
+          Paste your PR analysis into a release and let AI pick the relevant test cases for you.
+          Get your free API key from <strong style={{ color: 'var(--accent2)' }}>console.groq.com</strong> — no credit card required.
+        </p>
+        <div className="field-group" style={{ marginBottom: '0.75rem' }}>
+          <label>Groq API Key</label>
+          <input
+            type="password"
+            value={grokInput}
+            onChange={e => setGrokInput(e.target.value)}
+            placeholder="gsk_xxxxxxxxxxxxxxxxxxxx"
+          />
+          <span className="field-hint">Stored locally in your browser — never sent anywhere except Groq's API.</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button className="btn-primary" onClick={handleSaveGrok} style={{ width: 'auto' }}>
+            {grokSaved ? <><CheckCircle size={13} /> Saved!</> : <><Sparkles size={13} /> Save Key</>}
+          </button>
+          {grokKey && !grokSaved && (
+            <span style={{ fontSize: '12px', color: 'var(--green)', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <CheckCircle size={12} /> Key configured
+            </span>
+          )}
         </div>
       </div>
 
@@ -1703,7 +1748,7 @@ function ReleasesView({ releases, onNew, onOpen, onDelete, onClone, getStats, sh
 }
 
 // ── Release Detail View ────────────────────────────────────────────────────────
-function ReleaseDetailView({ release, allTestCases, searchQ, setSearchQ, onToggle, onBulkToggle, onStatusChange, onNotesChange, onBack, onExport, getStats, loadingCsv, onRefresh, testCasesLoaded, onChecklistChange }) {
+function ReleaseDetailView({ release, allTestCases, searchQ, setSearchQ, onToggle, onBulkToggle, onStatusChange, onNotesChange, onBack, onExport, getStats, loadingCsv, onRefresh, testCasesLoaded, onChecklistChange, grokKey }) {
   const [tab, setTab] = useState('run')
   const [copied, setCopied] = useState(false)
   const s = getStats(release)
@@ -1812,8 +1857,14 @@ function ReleaseDetailView({ release, allTestCases, searchQ, setSearchQ, onToggl
         <button className={`tab ${tab === 'run' ? 'active' : ''}`} onClick={() => setTab('run')}>
           Run Tests ({s.total})
         </button>
+        <button className={`tab ${tab === 'ai-pick' ? 'active' : ''}`} onClick={() => setTab('ai-pick')}
+          style={tab === 'ai-pick' ? {} : { color: 'var(--accent2)' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <Sparkles size={13} /> AI Pick
+          </span>
+        </button>
         <button className={`tab ${tab === 'pick' ? 'active' : ''}`} onClick={() => setTab('pick')}>
-          Pick Test Cases {allTestCases.length > 0 && `(${allTestCases.length} available)`}
+          Manual Pick {allTestCases.length > 0 && `(${allTestCases.length})`}
         </button>
         <button className={`tab ${tab === 'checklist' ? 'active' : ''}`} onClick={() => setTab('checklist')}>
           Checklist {checklistDone > 0 && `(${checklistDone}/${DEFAULT_CHECKLIST.length})`}
@@ -1832,6 +1883,16 @@ function ReleaseDetailView({ release, allTestCases, searchQ, setSearchQ, onToggl
           </button>
         )}
       </div>
+
+      {tab === 'ai-pick' && (
+        <AiPickPanel
+          allTestCases={allTestCases}
+          release={release}
+          onBulkToggle={onBulkToggle}
+          grokKey={grokKey}
+          testCasesLoaded={testCasesLoaded}
+        />
+      )}
 
       {tab === 'pick' && (
         <PickPanel
@@ -1855,6 +1916,352 @@ function ReleaseDetailView({ release, allTestCases, searchQ, setSearchQ, onToggl
 
       {tab === 'checklist' && (
         <ChecklistPanel checklist={release.checklist || {}} onChange={onChecklistChange} done={checklistDone} total={DEFAULT_CHECKLIST.length} />
+      )}
+    </div>
+  )
+}
+
+// ── AI Pick Panel ─────────────────────────────────────────────────────────────
+const GROK_SYSTEM_PROMPT = `You are a QA analyst for payment gateway testing. Given a PR analysis and a pre-filtered list of test cases (ID|Priority|Title), select only the ones directly relevant to the described changes.
+STRICT RULES:
+- ONLY suggest TCs from the provided list that are genuinely relevant to the change
+- Do NOT suggest TCs for unrelated gateways, payment methods, or flows not mentioned
+- Prioritise P0 > P1 > P2
+- Return 3-20 TCs maximum
+- Output ONLY a valid JSON array, no markdown, no explanation
+- Reasons must be ≤8 words
+Format: [{"tc_id":"TC-001","reason":"covers hosted form auth flow"}]`
+
+const KNOWN_GATEWAYS = [
+  'cardstream', 'adyen', 'checkout', 'checkout.com', 'stripe', 'paypal',
+  'worldpay', 'braintree', 'klarna', 'nuvei', 'opayo', 'sagepay',
+  'trust payments', 'barclays', 'elavon', 'fiserv', 'globalpaymants'
+]
+const FLOW_KEYWORDS = [
+  'hosted form', 'hosted page', 'hpp', 'apple pay', 'google pay', 'pay by bank',
+  '3ds', '3d secure', 'challenge', 'frictionless', 'refund', 'capture', 'void',
+  'pre-auth', 'preauth', 'tokenis', 'saved card', 'recurring', 'webhook',
+  'callback', 'white label', 'white-label', 'split', 'partner', 'dispute',
+  'chargeback', 'surcharge', 'tip', 'dynamic descriptor'
+]
+
+function buildFilterPool(allTestCases, alreadySelectedIds, ctx) {
+  const ctxLower = ctx.toLowerCase()
+  const priorityOrder = { P0: 0, P1: 1, P2: 2 }
+  const candidates = allTestCases
+    .filter(tc => !alreadySelectedIds.has(tc.id))
+    .sort((a, b) => (priorityOrder[a.priority] ?? 2) - (priorityOrder[b.priority] ?? 2))
+
+  const detectedGateways = KNOWN_GATEWAYS.filter(gw => ctxLower.includes(gw))
+
+  // Step 1: gateway match
+  if (detectedGateways.length > 0) {
+    const gwPool = candidates.filter(tc =>
+      detectedGateways.some(gw =>
+        (tc.module || '').toLowerCase().includes(gw) ||
+        (tc.id     || '').toLowerCase().includes(gw) ||
+        (tc.title  || '').toLowerCase().includes(gw)
+      )
+    )
+    if (gwPool.length >= 5) {
+      return { pool: gwPool, status: 'gateway', label: `Gateway matched: ${detectedGateways.join(', ')}`, warn: false }
+    }
+    // Gateway detected but no matching TCs — warn user, try flow keywords
+    const detectedFlows = FLOW_KEYWORDS.filter(kw => ctxLower.includes(kw))
+    if (detectedFlows.length > 0) {
+      const flowPool = candidates.filter(tc =>
+        detectedFlows.some(kw =>
+          (tc.title  || '').toLowerCase().includes(kw) ||
+          (tc.module || '').toLowerCase().includes(kw)
+        )
+      )
+      if (flowPool.length >= 5) {
+        return {
+          pool: flowPool,
+          status: 'no-gateway-tcs',
+          label: `No ${detectedGateways.join('/')} test cases in library — matched by flow: ${detectedFlows.slice(0, 3).join(', ')}`,
+          warn: true
+        }
+      }
+    }
+    return {
+      pool: candidates,
+      status: 'no-gateway-tcs',
+      label: `No ${detectedGateways.join('/')} test cases found in library. Results may be inaccurate — add ${detectedGateways.join('/')} test cases to your library first.`,
+      warn: true
+    }
+  }
+
+  // Step 2: no gateway — flow keyword match
+  const detectedFlows = FLOW_KEYWORDS.filter(kw => ctxLower.includes(kw))
+  if (detectedFlows.length > 0) {
+    const flowPool = candidates.filter(tc =>
+      detectedFlows.some(kw =>
+        (tc.title  || '').toLowerCase().includes(kw) ||
+        (tc.module || '').toLowerCase().includes(kw)
+      )
+    )
+    if (flowPool.length >= 5) {
+      return { pool: flowPool, status: 'flow', label: `Filtered by flow: ${detectedFlows.slice(0, 4).join(', ')}`, warn: false }
+    }
+  }
+
+  return { pool: candidates, status: 'all', label: 'No specific gateway or flow detected — using all test cases', warn: false }
+}
+
+function AiPickPanel({ allTestCases, release, onBulkToggle, grokKey, testCasesLoaded }) {
+  const [context, setContext]         = useState('')
+  const [loading, setLoading]         = useState(false)
+  const [suggestions, setSuggestions] = useState(null)
+  const [approved, setApproved]       = useState(new Set())
+  const [error, setError]             = useState('')
+  const [applied, setApplied]         = useState(false)
+  const [filterInfo, setFilterInfo]   = useState(null)
+
+  const alreadySelectedIds = new Set(release.testCases.map(t => t.id))
+
+  const analyse = async () => {
+    if (!context.trim()) return
+    if (!grokKey) { setError('No Groq API key — add it in Settings.'); return }
+    if (!testCasesLoaded || allTestCases.length === 0) { setError('No test cases loaded. Go to Settings to sync from GitHub.'); return }
+
+    setLoading(true); setError(''); setSuggestions(null); setApplied(false); setFilterInfo(null)
+
+    const ctx = context.trim().slice(0, 1200)
+    const { pool, status, label, warn } = buildFilterPool(allTestCases, alreadySelectedIds, ctx)
+    setFilterInfo({ status, label, warn, count: pool.length })
+
+    const tcLines = pool.slice(0, 100).map(tc => `${tc.id}|${tc.priority || 'P2'}|${tc.title}`)
+
+    const userMsg = [
+      `Release: ${release.name}`,
+      `PR Analysis:\n${ctx}`,
+      `\nTest cases (${tcLines.length}) — ID|Priority|Title:\n${tcLines.join('\n')}`,
+    ].join('\n')
+
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${grokKey}` },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [
+            { role: 'system', content: GROK_SYSTEM_PROMPT },
+            { role: 'user',   content: userMsg },
+          ],
+          temperature: 0.2,
+          max_tokens: 800,
+        }),
+      })
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body?.error?.message || `API error ${res.status}`)
+      }
+
+      const data = await res.json()
+      const raw  = data.choices?.[0]?.message?.content || '[]'
+
+      // Strip markdown fences, then parse — salvage truncated JSON by closing the array
+      const cleaned = raw.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim()
+      let parsed
+      try {
+        parsed = JSON.parse(cleaned)
+      } catch {
+        // Response was cut off — find the last complete object and close the array
+        const lastBrace = cleaned.lastIndexOf('},')
+        const salvaged  = lastBrace > 0 ? cleaned.slice(0, lastBrace + 1) + ']' : null
+        if (!salvaged) throw new Error('AI response was cut off and could not be recovered. Try shorter context.')
+        parsed = JSON.parse(salvaged)
+      }
+      if (!Array.isArray(parsed)) throw new Error('Unexpected response format from AI')
+
+      // Join AI suggestions with actual TC objects
+      const tcMap = Object.fromEntries(allTestCases.map(tc => [tc.id, tc]))
+      const enriched = parsed
+        .filter(s => tcMap[s.tc_id])
+        .map(s => ({ ...s, tc: tcMap[s.tc_id] }))
+
+      if (enriched.length === 0) throw new Error('AI found no matching test cases — try adding more context.')
+
+      setSuggestions(enriched)
+      setApproved(new Set(enriched.map(s => s.tc_id)))
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const toggleApproval = (tcId) => {
+    setApproved(prev => {
+      const next = new Set(prev)
+      next.has(tcId) ? next.delete(tcId) : next.add(tcId)
+      return next
+    })
+  }
+
+  const applySelected = () => {
+    const tcs = suggestions.filter(s => approved.has(s.tc_id)).map(s => s.tc)
+    onBulkToggle(tcs, true)
+    setApplied(true)
+  }
+
+  const approvedCount = approved.size
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {/* Input card */}
+      <div className="settings-card">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+          <div style={{ width: 32, height: 32, borderRadius: '10px', background: 'linear-gradient(135deg,#7C3AED,#A78BFA)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 16px rgba(139,92,246,0.45)' }}>
+            <Bot size={16} color="#fff" />
+          </div>
+          <div>
+            <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text)' }}>AI Test Case Analyser</div>
+            <div style={{ fontSize: '12px', color: 'var(--text3)' }}>Powered by Groq · llama-3.3-70b</div>
+          </div>
+        </div>
+
+        {!grokKey && (
+          <div className="warn-box" style={{ marginBottom: '12px' }}>
+            <AlertCircle size={13} /> No Groq API key configured — go to <strong>Settings</strong> to add it. Free key at console.groq.com.
+          </div>
+        )}
+
+        <div className="field-group">
+          <label>PR Analysis / Change Context</label>
+          <textarea
+            value={context}
+            onChange={e => setContext(e.target.value)}
+            rows={6}
+            style={{ resize: 'vertical', fontFamily: 'var(--font-body)', fontSize: '13px' }}
+            placeholder={`Paste your PR description, diff summary, or change context here.\n\nExample:\n- Modified 3DS authentication flow in Adyen integration\n- Fixed card decline error handling in Checkout.com\n- Added new webhook endpoint for payment status updates`}
+          />
+          <span className="field-hint">{allTestCases.length} test cases available · {alreadySelectedIds.size} already in this release</span>
+        </div>
+
+        {error && (
+          <div className="error-box" style={{ marginBottom: '12px' }}>
+            <XCircle size={13} style={{ flexShrink: 0 }} /> {error}
+          </div>
+        )}
+
+        <button
+          className="btn-primary"
+          onClick={analyse}
+          disabled={loading || !context.trim() || !grokKey}
+          style={{ width: 'auto' }}
+        >
+          {loading
+            ? <><RefreshCw size={13} className="spin" /> Analysing…</>
+            : <><Sparkles size={13} /> Analyse &amp; Suggest Test Cases</>}
+        </button>
+      </div>
+
+      {/* Filter status banner */}
+      {filterInfo && (
+        <div style={{
+          display: 'flex', alignItems: 'flex-start', gap: '8px',
+          padding: '10px 14px', borderRadius: '8px', fontSize: '12px', lineHeight: 1.5,
+          background: filterInfo.warn ? 'rgba(252,163,17,0.08)' : 'rgba(139,92,246,0.08)',
+          border: `1px solid ${filterInfo.warn ? 'rgba(252,163,17,0.3)' : 'rgba(139,92,246,0.25)'}`,
+          color: filterInfo.warn ? '#FCD34D' : 'var(--accent2)',
+        }}>
+          {filterInfo.warn
+            ? <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+            : <Filter size={13} style={{ flexShrink: 0, marginTop: 1 }} />}
+          <span>
+            <strong>{filterInfo.warn ? 'Warning — ' : ''}{filterInfo.count} test cases</strong> sent to AI · {filterInfo.label}
+          </span>
+        </div>
+      )}
+
+      {/* Suggestions review */}
+      {suggestions && (
+        <div className="settings-card" style={{ padding: 0, overflow: 'hidden' }}>
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.25rem', borderBottom: '1px solid var(--border)', background: 'var(--bg3)', flexWrap: 'wrap', gap: '10px' }}>
+            <div>
+              <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '7px' }}>
+                <Sparkles size={14} color="var(--accent2)" />
+                Grok suggested {suggestions.length} test case{suggestions.length !== 1 ? 's' : ''}
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text3)', marginTop: '2px' }}>
+                Review and deselect any you don't want, then click Add to Release
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button className="btn-ghost sm" onClick={() => setApproved(new Set(suggestions.map(s => s.tc_id)))}>
+                Select All
+              </button>
+              <button className="btn-ghost sm" onClick={() => setApproved(new Set())}>
+                Clear
+              </button>
+              <button
+                className="btn-primary"
+                onClick={applySelected}
+                disabled={approvedCount === 0 || applied}
+                style={{ width: 'auto' }}
+              >
+                {applied
+                  ? <><CheckCircle size={13} /> Added!</>
+                  : <><ThumbsUp size={13} /> Add {approvedCount} to Release</>}
+              </button>
+            </div>
+          </div>
+
+          {/* Suggestion rows */}
+          <div>
+            {suggestions.map((s, i) => {
+              const isApproved = approved.has(s.tc_id)
+              const tc = s.tc
+              return (
+                <label
+                  key={s.tc_id}
+                  style={{
+                    display: 'flex', alignItems: 'flex-start', gap: '12px',
+                    padding: '12px 1.25rem',
+                    borderBottom: i < suggestions.length - 1 ? '1px solid var(--border)' : 'none',
+                    cursor: 'pointer',
+                    background: isApproved ? 'rgba(139,92,246,0.05)' : 'transparent',
+                    transition: 'background 0.12s',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isApproved}
+                    onChange={() => toggleApproval(s.tc_id)}
+                    style={{ marginTop: '3px', accentColor: 'var(--accent)', width: 'auto', flexShrink: 0 }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap', marginBottom: '4px' }}>
+                      <PriorityBadge priority={tc.priority} />
+                      <span className="tc-id">{tc.id}</span>
+                      <span style={{ fontSize: '11px', color: 'var(--text3)' }}>{tc.module}{tc.submodule ? ` › ${tc.submodule}` : ''}</span>
+                    </div>
+                    <div style={{ fontSize: '14px', color: 'var(--text)', fontWeight: 500, marginBottom: '5px' }}>{tc.title}</div>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+                      <Sparkles size={11} color="var(--accent2)" style={{ marginTop: '2px', flexShrink: 0 }} />
+                      <span style={{ fontSize: '12px', color: 'var(--accent2)', lineHeight: 1.5, fontStyle: 'italic' }}>{s.reason}</span>
+                    </div>
+                  </div>
+                  <div style={{ flexShrink: 0 }}>
+                    {isApproved
+                      ? <ThumbsUp size={14} color="var(--accent2)" />
+                      : <ThumbsDown size={14} color="var(--text3)" />}
+                  </div>
+                </label>
+              )
+            })}
+          </div>
+
+          {applied && (
+            <div className="success-box" style={{ margin: '1rem 1.25rem' }}>
+              <CheckCircle size={13} /> {approvedCount} test case{approvedCount !== 1 ? 's' : ''} added to the release — switch to <strong>Run Tests</strong> to start validating.
+            </div>
+          )}
+        </div>
       )}
     </div>
   )
