@@ -113,8 +113,8 @@ function LabelChips({ labels, max = 0 }) {
       {shown.map(tag => (
         <span key={tag} style={{
           fontSize: '10px', padding: '1px 6px', borderRadius: '3px',
-          background: 'var(--accent)15', color: 'var(--accent2)',
-          border: '1px solid var(--accent)25',
+          background: 'rgba(109,72,226,0.10)', color: 'var(--accent2)',
+          border: '1px solid rgba(109,72,226,0.25)',
         }}>
           {tag}
         </span>
@@ -1680,7 +1680,10 @@ function ReleasesView({ releases, onNew, onOpen, onDelete, onClone, getStats, sh
                 <span className="month-label">{month}</span>
                 <span className="month-count">{monthReleases.length} release{monthReleases.length !== 1 ? 's' : ''}</span>
               </span>
-              <span className="month-progress">{monthPass}/{monthTotal} passed</span>
+              <span className="month-progress">
+                {monthPass}/{monthTotal} passed
+                {monthTotal > 0 && <span className="month-pct">{Math.round(monthPass / monthTotal * 100)}%</span>}
+              </span>
             </button>
 
             {!collapsed && (
@@ -1692,7 +1695,8 @@ function ReleasesView({ releases, onNew, onOpen, onDelete, onClone, getStats, sh
                   const env = r.environment || 'Staging'
                   const envCfg = ENV_CONFIG[env] || ENV_CONFIG.Staging
                   return (
-                    <div className="release-card" key={r.id} onClick={() => onOpen(r.id)}
+                    <div className={`release-card ${ship?.label === 'Ready to Ship' ? 'ship-ready' : ship?.label === 'Blocked' ? 'ship-blocked' : ''}`}
+                      key={r.id} onClick={() => onOpen(r.id)}
                       style={{ borderLeftColor: ship ? ship.color : envCfg.color }}>
                       <div className="release-card-top">
                         <div style={{ flex: 1, minWidth: 0 }}>
@@ -1852,11 +1856,14 @@ function ReleaseDetailView({ release, allTestCases, searchQ, setSearchQ, onToggl
           <span style={{ color: 'var(--accent2)' }}>{s.total}</span>
           <span className="stat-lbl">Total</span>
         </div>
-        <div style={{ marginLeft: 'auto' }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
           {s.total > 0 && (
-            <div className="mini-progress">
-              <div className="mini-progress-fill" style={{ width: `${s.total > 0 ? Math.round((s.pass / s.total) * 100) : 0}%` }} />
-            </div>
+            <>
+              <span className="stats-pct">{Math.round((s.pass / s.total) * 100)}%</span>
+              <div className="mini-progress">
+                <div className="mini-progress-fill" style={{ width: `${Math.round((s.pass / s.total) * 100)}%` }} />
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -2336,8 +2343,7 @@ function RunPanel({ release, onStatusChange, onNotesChange }) {
               const cnt = release.testCases.filter(t => t.status === k).length
               return (
                 <button key={k}
-                  className={`filter-chip ${filterStatus === k ? 'active' : ''}`}
-                  style={filterStatus === k ? { background: cfg.color + '22', color: cfg.color, borderColor: cfg.color + '60' } : {}}
+                  className={`filter-chip ${filterStatus === k ? `active status-${k}` : ''}`}
                   onClick={() => setFilterStatus(k)}>
                   {cfg.label} {cnt > 0 && `(${cnt})`}
                 </button>
