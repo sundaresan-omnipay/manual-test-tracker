@@ -1,41 +1,85 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* ── Light mode (default) ── */
 :root {
-  /* ── Deep space base ── */
-  --bg:      #16132F;
-  --bg2:     rgba(32, 26, 68, 0.97);
-  --bg3:     rgba(44, 36, 84, 0.96);
-  --border:  rgba(139,92,246,0.38);
-  --border2: rgba(139,92,246,0.65);
+  --bg:      #F5F3FF;
+  --bg2:     #FFFFFF;
+  --bg3:     #EEEAFF;
+  --border:  rgba(109,72,226,0.16);
+  --border2: rgba(109,72,226,0.35);
 
-  /* ── Text ── */
-  --text:  #FAFAFF;
-  --text2: #D6CBEF;
-  --text3: #B0A4DC;
+  --text:  #18143A;
+  --text2: #4A3F78;
+  --text3: #7A6FAD;
 
-  /* ── Vision violet ── */
-  --accent:  #8B5CF6;
-  --accent2: #C4B5FD;
+  --accent:  #6D48E2;
+  --accent2: #9B7DFF;
 
-  /* ── Sidebar ── */
-  --sb-bg:         #100E28;
-  --sb-text:       #F2EEFF;
-  --sb-text2:      #C2B6E2;
-  --sb-text3:      #9E93CC;
-  --sb-border:     rgba(139,92,246,0.26);
-  --sb-active:     rgba(139,92,246,0.28);
-  --sb-active-text:#D4C6FF;
-  --sb-hover:      rgba(139,92,246,0.15);
+  --sb-bg:         #EBE7FF;
+  --sb-text:       #18143A;
+  --sb-text2:      #4A3F78;
+  --sb-text3:      #7A6FAD;
+  --sb-border:     rgba(109,72,226,0.16);
+  --sb-active:     rgba(109,72,226,0.15);
+  --sb-active-text:#4527C8;
+  --sb-hover:      rgba(109,72,226,0.10);
 
-  /* ── Semantic ── */
-  --green:  #34D399;
-  --red:    #FCA5A5;
-  --yellow: #FCD34D;
-  --blue:   #93C5FD;
+  --green:        #059669;
+  --green-bg:     rgba(5,150,105,0.09);
+  --green-border: rgba(5,150,105,0.30);
+
+  --red:          #DC2626;
+  --red-bg:       rgba(220,38,38,0.09);
+  --red-border:   rgba(220,38,38,0.30);
+
+  --yellow:        #D97706;
+  --yellow-bg:     rgba(217,119,6,0.09);
+  --yellow-border: rgba(217,119,6,0.30);
+
+  --blue:   #2563EB;
 
   --card-radius: 12px;
   --font-head: 'Plus Jakarta Sans', sans-serif;
   --font-body: 'Space Grotesk', sans-serif;
+}
+
+/* ── Dark / Night mode ── */
+[data-theme="dark"] {
+  --bg:      #1C1838;
+  --bg2:     #252050;
+  --bg3:     #2E2860;
+  --border:  rgba(139,92,246,0.44);
+  --border2: rgba(139,92,246,0.70);
+
+  --text:  #FAFAFF;
+  --text2: #DDD4F5;
+  --text3: #B8AEE0;
+
+  --accent:  #9B6FF8;
+  --accent2: #CFC0FF;
+
+  --sb-bg:         #161232;
+  --sb-text:       #F2EEFF;
+  --sb-text2:      #CAC0E8;
+  --sb-text3:      #A89ED4;
+  --sb-border:     rgba(139,92,246,0.30);
+  --sb-active:     rgba(139,92,246,0.32);
+  --sb-active-text:#DCCFFF;
+  --sb-hover:      rgba(139,92,246,0.18);
+
+  --green:        #34D399;
+  --green-bg:     rgba(52,211,153,0.12);
+  --green-border: rgba(52,211,153,0.40);
+
+  --red:          #FCA5A5;
+  --red-bg:       rgba(252,165,165,0.12);
+  --red-border:   rgba(252,165,165,0.40);
+
+  --yellow:        #FCD34D;
+  --yellow-bg:     rgba(252,211,77,0.12);
+  --yellow-border: rgba(252,211,77,0.40);
+
+  --blue:   #93C5FD;
 }
 
 body {
@@ -46,16 +90,17 @@ body {
   line-height: 1.55;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
+  transition: background 0.25s ease, color 0.25s ease;
 }
 
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(139,92,246,0.35); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(139,92,246,0.55); }
+::-webkit-scrollbar-thumb { background: rgba(109,72,226,0.30); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(109,72,226,0.55); }
 
 input, select, textarea {
   font-family: var(--font-body);
-  background: rgba(139,92,246,0.07);
+  background: var(--bg3);
   border: 1px solid var(--border);
   color: var(--text);
   border-radius: 8px;
@@ -67,9 +112,9 @@ input, select, textarea {
 }
 input::placeholder, textarea::placeholder { color: var(--text3); opacity: 0.8; }
 input:focus, select:focus, textarea:focus {
-  border-color: rgba(139,92,246,0.65);
-  background: rgba(139,92,246,0.1);
-  box-shadow: 0 0 0 3px rgba(139,92,246,0.14), 0 0 20px rgba(139,92,246,0.1);
+  border-color: var(--accent);
+  background: var(--bg3);
+  box-shadow: 0 0 0 3px rgba(109,72,226,0.12);
 }
 
 button {

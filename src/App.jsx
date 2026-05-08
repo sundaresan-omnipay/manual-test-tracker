@@ -5,7 +5,8 @@ import {
   RefreshCw, ChevronDown, ChevronUp, Search,
   Download, Settings, X, AlertCircle, SkipForward, Layers,
   Upload, Tag, FileText, ChevronRight, Filter, BarChart2,
-  Radio, User, UserCheck, Copy, TrendingUp, Zap, Sparkles, Bot, ThumbsUp, ThumbsDown
+  Radio, User, UserCheck, Copy, TrendingUp, Zap, Sparkles, Bot, ThumbsUp, ThumbsDown,
+  Sun, Moon
 } from 'lucide-react'
 import { supabase } from './lib/supabase.js'
 
@@ -125,6 +126,12 @@ function LabelChips({ labels, max = 0 }) {
 
 // ── Root App ───────────────────────────────────────────────────────────────────
 export default function App() {
+  const [theme, setTheme] = useState(() => localStorage.getItem('beacon_theme') || 'light')
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('beacon_theme', theme)
+  }, [theme])
+
   const [releases, setReleases]               = useState([])
   const [githubConfig, setGithubConfig]       = useState(loadGithubConfig)
   const [grokKey, setGrokKey]                 = useState(loadGrokKey)
@@ -638,6 +645,11 @@ export default function App() {
           </span>
           <button className="nav-item" onClick={loadFromSupabase} style={{ opacity: 0.7, fontSize: '12px' }}>
             <RefreshCw size={13} /> Refresh
+          </button>
+          <button className="theme-toggle" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}>
+            {theme === 'dark' ? <Moon size={14} /> : <Sun size={14} />}
+            {theme === 'dark' ? 'Night mode' : 'Light mode'}
+            <span className="theme-toggle-track"><span className="theme-toggle-thumb" /></span>
           </button>
           <div className="brand-credit">
             <span>Exclusive Datman QA Tool</span>
@@ -1663,16 +1675,12 @@ function ReleasesView({ releases, onNew, onOpen, onDelete, onClone, getStats, sh
         return (
           <div key={month} className="month-group">
             <button className="month-header" onClick={() => toggleMonth(month)}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+              <span className="month-left">
+                {collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
                 <span className="month-label">{month}</span>
                 <span className="month-count">{monthReleases.length} release{monthReleases.length !== 1 ? 's' : ''}</span>
-              </div>
-              {monthTotal > 0 && (
-                <span className="month-progress">
-                  {monthPass}/{monthTotal} passed
-                </span>
-              )}
+              </span>
+              <span className="month-progress">{monthPass}/{monthTotal} passed</span>
             </button>
 
             {!collapsed && (
@@ -1684,7 +1692,8 @@ function ReleasesView({ releases, onNew, onOpen, onDelete, onClone, getStats, sh
                   const env = r.environment || 'Staging'
                   const envCfg = ENV_CONFIG[env] || ENV_CONFIG.Staging
                   return (
-                    <div className="release-card" key={r.id} onClick={() => onOpen(r.id)}>
+                    <div className="release-card" key={r.id} onClick={() => onOpen(r.id)}
+                      style={{ borderLeftColor: ship ? ship.color : envCfg.color }}>
                       <div className="release-card-top">
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginBottom: '3px' }}>
@@ -1731,10 +1740,10 @@ function ReleasesView({ releases, onNew, onOpen, onDelete, onClone, getStats, sh
                           <span key={k} className={`stat-badge stat-${k}`}>{v} {k}</span>
                         ))}
                       </div>
-                      <div className="progress-bar">
-                        <div className="progress-fill" style={{ width: `${pct}%` }} />
+                      <div className="release-footer">
+                        <div className="progress-bar"><div className="progress-fill" style={{ width: `${pct}%` }} /></div>
+                        <span className="progress-label">{pct}% · {s.total} tests</span>
                       </div>
-                      <div className="progress-label">{s.total} test cases · {pct}% passed</div>
                     </div>
                   )
                 })}
@@ -1748,7 +1757,7 @@ function ReleasesView({ releases, onNew, onOpen, onDelete, onClone, getStats, sh
 }
 
 // ── Release Detail View ────────────────────────────────────────────────────────
-function ReleaseDetailView({ release, allTestCases, searchQ, setSearchQ, onToggle, onBulkToggle, onStatusChange, onNotesChange, onBack, onExport, getStats, loadingCsv, onRefresh, testCasesLoaded, onChecklistChange, grokKey }) {
+function ReleaseDetailView({ release, allTestCases, searchQ, setSearchQ, onToggle, onBulkToggle, onStatusChange, onNotesChange, onBack, onExport, getStats, loadingCsv, onRefresh, testCasesLoaded, onChecklistChange }) {
   const [tab, setTab] = useState('run')
   const [copied, setCopied] = useState(false)
   const s = getStats(release)
@@ -1889,7 +1898,6 @@ function ReleaseDetailView({ release, allTestCases, searchQ, setSearchQ, onToggl
           allTestCases={allTestCases}
           release={release}
           onBulkToggle={onBulkToggle}
-          grokKey={grokKey}
           testCasesLoaded={testCasesLoaded}
         />
       )}
@@ -1922,175 +1930,69 @@ function ReleaseDetailView({ release, allTestCases, searchQ, setSearchQ, onToggl
 }
 
 // ── AI Pick Panel ─────────────────────────────────────────────────────────────
-const GROK_SYSTEM_PROMPT = `You are a QA analyst for payment gateway testing. Given a PR analysis and a pre-filtered list of test cases (ID|Priority|Title), select only the ones directly relevant to the described changes.
-STRICT RULES:
-- ONLY suggest TCs from the provided list that are genuinely relevant to the change
-- Do NOT suggest TCs for unrelated gateways, payment methods, or flows not mentioned
-- Prioritise P0 > P1 > P2
-- Return 3-20 TCs maximum
-- Output ONLY a valid JSON array, no markdown, no explanation
-- Reasons must be ≤8 words
-Format: [{"tc_id":"TC-001","reason":"covers hosted form auth flow"}]`
-
-const KNOWN_GATEWAYS = [
-  'cardstream', 'adyen', 'checkout', 'checkout.com', 'stripe', 'paypal',
-  'worldpay', 'braintree', 'klarna', 'nuvei', 'opayo', 'sagepay',
-  'trust payments', 'barclays', 'elavon', 'fiserv', 'globalpaymants'
-]
-const FLOW_KEYWORDS = [
-  'hosted form', 'hosted page', 'hpp', 'apple pay', 'google pay', 'pay by bank',
-  '3ds', '3d secure', 'challenge', 'frictionless', 'refund', 'capture', 'void',
-  'pre-auth', 'preauth', 'tokenis', 'saved card', 'recurring', 'webhook',
-  'callback', 'white label', 'white-label', 'split', 'partner', 'dispute',
-  'chargeback', 'surcharge', 'tip', 'dynamic descriptor'
-]
-
-function buildFilterPool(allTestCases, alreadySelectedIds, ctx) {
-  const ctxLower = ctx.toLowerCase()
-  const priorityOrder = { P0: 0, P1: 1, P2: 2 }
-  const candidates = allTestCases
-    .filter(tc => !alreadySelectedIds.has(tc.id))
-    .sort((a, b) => (priorityOrder[a.priority] ?? 2) - (priorityOrder[b.priority] ?? 2))
-
-  const detectedGateways = KNOWN_GATEWAYS.filter(gw => ctxLower.includes(gw))
-
-  // Step 1: gateway match
-  if (detectedGateways.length > 0) {
-    const gwPool = candidates.filter(tc =>
-      detectedGateways.some(gw =>
-        (tc.module || '').toLowerCase().includes(gw) ||
-        (tc.id     || '').toLowerCase().includes(gw) ||
-        (tc.title  || '').toLowerCase().includes(gw)
-      )
-    )
-    if (gwPool.length >= 5) {
-      return { pool: gwPool, status: 'gateway', label: `Gateway matched: ${detectedGateways.join(', ')}`, warn: false }
-    }
-    // Gateway detected but no matching TCs — warn user, try flow keywords
-    const detectedFlows = FLOW_KEYWORDS.filter(kw => ctxLower.includes(kw))
-    if (detectedFlows.length > 0) {
-      const flowPool = candidates.filter(tc =>
-        detectedFlows.some(kw =>
-          (tc.title  || '').toLowerCase().includes(kw) ||
-          (tc.module || '').toLowerCase().includes(kw)
-        )
-      )
-      if (flowPool.length >= 5) {
-        return {
-          pool: flowPool,
-          status: 'no-gateway-tcs',
-          label: `No ${detectedGateways.join('/')} test cases in library — matched by flow: ${detectedFlows.slice(0, 3).join(', ')}`,
-          warn: true
-        }
-      }
-    }
-    return {
-      pool: candidates,
-      status: 'no-gateway-tcs',
-      label: `No ${detectedGateways.join('/')} test cases found in library. Results may be inaccurate — add ${detectedGateways.join('/')} test cases to your library first.`,
-      warn: true
-    }
-  }
-
-  // Step 2: no gateway — flow keyword match
-  const detectedFlows = FLOW_KEYWORDS.filter(kw => ctxLower.includes(kw))
-  if (detectedFlows.length > 0) {
-    const flowPool = candidates.filter(tc =>
-      detectedFlows.some(kw =>
-        (tc.title  || '').toLowerCase().includes(kw) ||
-        (tc.module || '').toLowerCase().includes(kw)
-      )
-    )
-    if (flowPool.length >= 5) {
-      return { pool: flowPool, status: 'flow', label: `Filtered by flow: ${detectedFlows.slice(0, 4).join(', ')}`, warn: false }
-    }
-  }
-
-  return { pool: candidates, status: 'all', label: 'No specific gateway or flow detected — using all test cases', warn: false }
-}
-
-function AiPickPanel({ allTestCases, release, onBulkToggle, grokKey, testCasesLoaded }) {
-  const [context, setContext]         = useState('')
-  const [loading, setLoading]         = useState(false)
+function AiPickPanel({ allTestCases, release, onBulkToggle, testCasesLoaded }) {
+  const [pastedText, setPastedText]   = useState('')
   const [suggestions, setSuggestions] = useState(null)
   const [approved, setApproved]       = useState(new Set())
   const [error, setError]             = useState('')
   const [applied, setApplied]         = useState(false)
-  const [filterInfo, setFilterInfo]   = useState(null)
+  const [unmatched, setUnmatched]     = useState([])
 
   const alreadySelectedIds = new Set(release.testCases.map(t => t.id))
 
-  const analyse = async () => {
-    if (!context.trim()) return
-    if (!grokKey) { setError('No Groq API key — add it in Settings.'); return }
-    if (!testCasesLoaded || allTestCases.length === 0) { setError('No test cases loaded. Go to Settings to sync from GitHub.'); return }
+  const parseAndMatch = () => {
+    setError(''); setSuggestions(null); setApplied(false); setUnmatched([])
+    const text = pastedText.trim()
+    if (!text) return
 
-    setLoading(true); setError(''); setSuggestions(null); setApplied(false); setFilterInfo(null)
+    const tcMap = Object.fromEntries(allTestCases.map(tc => [tc.id, tc]))
+    let items = []
+    let notFound = []
 
-    const ctx = context.trim().slice(0, 1200)
-    const { pool, status, label, warn } = buildFilterPool(allTestCases, alreadySelectedIds, ctx)
-    setFilterInfo({ status, label, warn, count: pool.length })
-
-    const tcLines = pool.slice(0, 100).map(tc => `${tc.id}|${tc.priority || 'P2'}|${tc.title}`)
-
-    const userMsg = [
-      `Release: ${release.name}`,
-      `PR Analysis:\n${ctx}`,
-      `\nTest cases (${tcLines.length}) — ID|Priority|Title:\n${tcLines.join('\n')}`,
-    ].join('\n')
-
-    try {
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${grokKey}` },
-        body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          messages: [
-            { role: 'system', content: GROK_SYSTEM_PROMPT },
-            { role: 'user',   content: userMsg },
-          ],
-          temperature: 0.2,
-          max_tokens: 800,
-        }),
-      })
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        throw new Error(body?.error?.message || `API error ${res.status}`)
-      }
-
-      const data = await res.json()
-      const raw  = data.choices?.[0]?.message?.content || '[]'
-
-      // Strip markdown fences, then parse — salvage truncated JSON by closing the array
-      const cleaned = raw.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim()
-      let parsed
-      try {
-        parsed = JSON.parse(cleaned)
-      } catch {
-        // Response was cut off — find the last complete object and close the array
-        const lastBrace = cleaned.lastIndexOf('},')
-        const salvaged  = lastBrace > 0 ? cleaned.slice(0, lastBrace + 1) + ']' : null
-        if (!salvaged) throw new Error('AI response was cut off and could not be recovered. Try shorter context.')
-        parsed = JSON.parse(salvaged)
-      }
-      if (!Array.isArray(parsed)) throw new Error('Unexpected response format from AI')
-
-      // Join AI suggestions with actual TC objects
-      const tcMap = Object.fromEntries(allTestCases.map(tc => [tc.id, tc]))
-      const enriched = parsed
-        .filter(s => tcMap[s.tc_id])
-        .map(s => ({ ...s, tc: tcMap[s.tc_id] }))
-
-      if (enriched.length === 0) throw new Error('AI found no matching test cases — try adding more context.')
-
-      setSuggestions(enriched)
-      setApproved(new Set(enriched.map(s => s.tc_id)))
-    } catch (e) {
-      setError(e.message)
-    } finally {
-      setLoading(false)
+    const isManual = (tc) => {
+      const s = (tc.automationStatus || '').toLowerCase().replace(/['']/g, "'")
+      return !s || s.includes("can't be automated") || s.includes("cant be automated") || s === 'pending'
     }
+
+    // Try JSON array first (Claude's structured output)
+    try {
+      const cleaned = text.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim()
+      const parsed = JSON.parse(cleaned)
+      if (Array.isArray(parsed)) {
+        parsed.forEach(item => {
+          const id = item.tc_id || item.id || item.TC_ID
+          if (id && tcMap[id] && !alreadySelectedIds.has(id) && isManual(tcMap[id])) {
+            items.push({ tc_id: id, reason: item.reason || item.rationale || '', tc: tcMap[id] })
+          } else if (id && !tcMap[id]) {
+            notFound.push(id)
+          }
+        })
+      }
+    } catch {
+      // Fallback: extract TC IDs by regex from freeform text
+      const matches = [...text.matchAll(/\b([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-\d+)\b/g)]
+      const ids = [...new Set(matches.map(m => m[1]))]
+      ids.forEach(id => {
+        if (tcMap[id] && !alreadySelectedIds.has(id) && isManual(tcMap[id])) {
+          items.push({ tc_id: id, reason: '', tc: tcMap[id] })
+        } else if (!tcMap[id]) {
+          notFound.push(id)
+        }
+      })
+    }
+
+    if (items.length === 0 && notFound.length === 0) {
+      setError('No test case IDs found. Make sure Claude\'s output contains TC IDs like AC-ENC-004 or CS-AUTH-001.')
+      return
+    }
+    if (items.length === 0) {
+      setError(`Found ${notFound.length} TC ID${notFound.length > 1 ? 's' : ''} but none matched the library: ${notFound.slice(0, 5).join(', ')}`)
+      return
+    }
+
+    setUnmatched(notFound)
+    setSuggestions(items)
+    setApproved(new Set(items.map(s => s.tc_id)))
   }
 
   const toggleApproval = (tcId) => {
@@ -2111,34 +2013,27 @@ function AiPickPanel({ allTestCases, release, onBulkToggle, grokKey, testCasesLo
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      {/* Input card */}
+
       <div className="settings-card">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
           <div style={{ width: 32, height: 32, borderRadius: '10px', background: 'linear-gradient(135deg,#7C3AED,#A78BFA)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 16px rgba(139,92,246,0.45)' }}>
             <Bot size={16} color="#fff" />
           </div>
           <div>
             <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text)' }}>AI Test Case Analyser</div>
-            <div style={{ fontSize: '12px', color: 'var(--text3)' }}>Powered by Groq · llama-3.3-70b</div>
+            <div style={{ fontSize: '12px', color: 'var(--text3)' }}>Run <code style={{ background: 'var(--bg3)', padding: '1px 5px', borderRadius: '4px', fontSize: '11px' }}>/qa-pick</code> in Claude Code, then paste the output below</div>
           </div>
         </div>
-
-        {!grokKey && (
-          <div className="warn-box" style={{ marginBottom: '12px' }}>
-            <AlertCircle size={13} /> No Groq API key configured — go to <strong>Settings</strong> to add it. Free key at console.groq.com.
-          </div>
-        )}
-
-        <div className="field-group">
-          <label>PR Analysis / Change Context</label>
+        <div className="field-group" style={{ marginBottom: '12px' }}>
+          <label>Paste Claude's JSON Output</label>
           <textarea
-            value={context}
-            onChange={e => setContext(e.target.value)}
-            rows={6}
-            style={{ resize: 'vertical', fontFamily: 'var(--font-body)', fontSize: '13px' }}
-            placeholder={`Paste your PR description, diff summary, or change context here.\n\nExample:\n- Modified 3DS authentication flow in Adyen integration\n- Fixed card decline error handling in Checkout.com\n- Added new webhook endpoint for payment status updates`}
+            value={pastedText}
+            onChange={e => setPastedText(e.target.value)}
+            rows={7}
+            style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: '12px' }}
+            placeholder={'Paste the JSON array from Claude here:\n\n[{"tc_id":"CS-AUTH-001","reason":"covers hosted form auth"},{"tc_id":"CS-3DS-002","reason":"3DS challenge flow"}]'}
           />
-          <span className="field-hint">{allTestCases.length} test cases available · {alreadySelectedIds.size} already in this release</span>
+          <span className="field-hint">{allTestCases.length} test cases in library · {alreadySelectedIds.size} already in this release</span>
         </div>
 
         {error && (
@@ -2149,69 +2044,47 @@ function AiPickPanel({ allTestCases, release, onBulkToggle, grokKey, testCasesLo
 
         <button
           className="btn-primary"
-          onClick={analyse}
-          disabled={loading || !context.trim() || !grokKey}
+          onClick={parseAndMatch}
+          disabled={!pastedText.trim() || !testCasesLoaded}
           style={{ width: 'auto' }}
         >
-          {loading
-            ? <><RefreshCw size={13} className="spin" /> Analysing…</>
-            : <><Sparkles size={13} /> Analyse &amp; Suggest Test Cases</>}
+          <Sparkles size={13} /> Review Suggestions
         </button>
       </div>
-
-      {/* Filter status banner */}
-      {filterInfo && (
-        <div style={{
-          display: 'flex', alignItems: 'flex-start', gap: '8px',
-          padding: '10px 14px', borderRadius: '8px', fontSize: '12px', lineHeight: 1.5,
-          background: filterInfo.warn ? 'rgba(252,163,17,0.08)' : 'rgba(139,92,246,0.08)',
-          border: `1px solid ${filterInfo.warn ? 'rgba(252,163,17,0.3)' : 'rgba(139,92,246,0.25)'}`,
-          color: filterInfo.warn ? '#FCD34D' : 'var(--accent2)',
-        }}>
-          {filterInfo.warn
-            ? <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-            : <Filter size={13} style={{ flexShrink: 0, marginTop: 1 }} />}
-          <span>
-            <strong>{filterInfo.warn ? 'Warning — ' : ''}{filterInfo.count} test cases</strong> sent to AI · {filterInfo.label}
-          </span>
-        </div>
-      )}
 
       {/* Suggestions review */}
       {suggestions && (
         <div className="settings-card" style={{ padding: 0, overflow: 'hidden' }}>
-          {/* Header */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.25rem', borderBottom: '1px solid var(--border)', background: 'var(--bg3)', flexWrap: 'wrap', gap: '10px' }}>
             <div>
               <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '7px' }}>
                 <Sparkles size={14} color="var(--accent2)" />
-                Grok suggested {suggestions.length} test case{suggestions.length !== 1 ? 's' : ''}
+                Claude suggested {suggestions.length} test case{suggestions.length !== 1 ? 's' : ''}
               </div>
               <div style={{ fontSize: '12px', color: 'var(--text3)', marginTop: '2px' }}>
                 Review and deselect any you don't want, then click Add to Release
               </div>
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <button className="btn-ghost sm" onClick={() => setApproved(new Set(suggestions.map(s => s.tc_id)))}>
-                Select All
-              </button>
-              <button className="btn-ghost sm" onClick={() => setApproved(new Set())}>
-                Clear
-              </button>
+              <button className="btn-ghost sm" onClick={() => setApproved(new Set(suggestions.map(s => s.tc_id)))}>Select All</button>
+              <button className="btn-ghost sm" onClick={() => setApproved(new Set())}>Clear</button>
               <button
                 className="btn-primary"
                 onClick={applySelected}
                 disabled={approvedCount === 0 || applied}
                 style={{ width: 'auto' }}
               >
-                {applied
-                  ? <><CheckCircle size={13} /> Added!</>
-                  : <><ThumbsUp size={13} /> Add {approvedCount} to Release</>}
+                {applied ? <><CheckCircle size={13} /> Added!</> : <><ThumbsUp size={13} /> Add {approvedCount} to Release</>}
               </button>
             </div>
           </div>
 
-          {/* Suggestion rows */}
+          {unmatched.length > 0 && (
+            <div className="warn-box" style={{ margin: '12px 1.25rem 0', fontSize: '12px' }}>
+              <AlertCircle size={12} /> {unmatched.length} TC ID{unmatched.length > 1 ? 's' : ''} from Claude not found in library (may be new TCs not yet synced): {unmatched.join(', ')}
+            </div>
+          )}
+
           <div>
             {suggestions.map((s, i) => {
               const isApproved = approved.has(s.tc_id)
@@ -2240,16 +2113,16 @@ function AiPickPanel({ allTestCases, release, onBulkToggle, grokKey, testCasesLo
                       <span className="tc-id">{tc.id}</span>
                       <span style={{ fontSize: '11px', color: 'var(--text3)' }}>{tc.module}{tc.submodule ? ` › ${tc.submodule}` : ''}</span>
                     </div>
-                    <div style={{ fontSize: '14px', color: 'var(--text)', fontWeight: 500, marginBottom: '5px' }}>{tc.title}</div>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
-                      <Sparkles size={11} color="var(--accent2)" style={{ marginTop: '2px', flexShrink: 0 }} />
-                      <span style={{ fontSize: '12px', color: 'var(--accent2)', lineHeight: 1.5, fontStyle: 'italic' }}>{s.reason}</span>
-                    </div>
+                    <div style={{ fontSize: '14px', color: 'var(--text)', fontWeight: 500, marginBottom: s.reason ? '5px' : 0 }}>{tc.title}</div>
+                    {s.reason && (
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+                        <Sparkles size={11} color="var(--accent2)" style={{ marginTop: '2px', flexShrink: 0 }} />
+                        <span style={{ fontSize: '12px', color: 'var(--accent2)', lineHeight: 1.5, fontStyle: 'italic' }}>{s.reason}</span>
+                      </div>
+                    )}
                   </div>
                   <div style={{ flexShrink: 0 }}>
-                    {isApproved
-                      ? <ThumbsUp size={14} color="var(--accent2)" />
-                      : <ThumbsDown size={14} color="var(--text3)" />}
+                    {isApproved ? <ThumbsUp size={14} color="var(--accent2)" /> : <ThumbsDown size={14} color="var(--text3)" />}
                   </div>
                 </label>
               )
@@ -2258,7 +2131,7 @@ function AiPickPanel({ allTestCases, release, onBulkToggle, grokKey, testCasesLo
 
           {applied && (
             <div className="success-box" style={{ margin: '1rem 1.25rem' }}>
-              <CheckCircle size={13} /> {approvedCount} test case{approvedCount !== 1 ? 's' : ''} added to the release — switch to <strong>Run Tests</strong> to start validating.
+              <CheckCircle size={13} /> {approvedCount} test case{approvedCount !== 1 ? 's' : ''} added — switch to <strong>Run Tests</strong> to start validating.
             </div>
           )}
         </div>
@@ -2536,8 +2409,7 @@ function RunPanel({ release, onStatusChange, onNotesChange }) {
                   <div className="run-right" onClick={e => e.stopPropagation()}>
                     {Object.entries(STATUS_CONFIG).map(([k, cfg]) => (
                       <button key={k}
-                        className={`status-btn ${tc.status === k ? 'active' : ''}`}
-                        style={tc.status === k ? { background: cfg.color + '22', color: cfg.color, borderColor: cfg.color } : {}}
+                        className={`status-btn ${tc.status === k ? `active ${k}` : ''}`}
                         onClick={() => onStatusChange(tc.id, k)}>
                         {cfg.label}
                       </button>
