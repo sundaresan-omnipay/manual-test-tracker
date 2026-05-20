@@ -29,10 +29,6 @@ function saveGithubConfig(cfg) {
   localStorage.setItem(GITHUB_CONFIG_KEY, JSON.stringify(cfg))
 }
 
-const GROK_KEY_STORAGE = 'beacon_groq_key'
-function loadGrokKey() { return localStorage.getItem(GROK_KEY_STORAGE) || '' }
-function saveGrokKey(key) { localStorage.setItem(GROK_KEY_STORAGE, key) }
-
 // Parse owner + repo from a GitHub URL
 function parseGithubRepo(url) {
   const m = url.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\s*$/)
@@ -129,7 +125,6 @@ export default function App() {
 
   const [releases, setReleases]               = useState([])
   const [githubConfig, setGithubConfig]       = useState(loadGithubConfig)
-  const [grokKey, setGrokKey]                 = useState(loadGrokKey)
   const [dbLoading, setDbLoading]             = useState(false)
   const [activeView, setActiveView]           = useState('releases')
   const [activeReleaseId, setActiveReleaseId] = useState(null)
@@ -247,6 +242,12 @@ export default function App() {
       console.error('Supabase load error:', e)
     } finally {
       setDbLoading(false)
+    }
+    // Deep-link: navigate to ?release=ID if present in the URL
+    const releaseParam = new URLSearchParams(window.location.search).get('release')
+    if (releaseParam) {
+      setActiveReleaseId(releaseParam)
+      setActiveView('release-detail')
     }
     // Auto-sync from GitHub in background — app is already visible with cached data
     if (autoSyncConfig?.url) fetchFromGithub(autoSyncConfig)
@@ -579,17 +580,14 @@ export default function App() {
 
   const logChange = async (releaseId, action, details = {}) => {
     if (!user) return
-    try {
-      await supabase.from('beacon_changelog').insert({
-        release_id: releaseId,
-        action,
-        details,
-        user_email: user.email,
-        user_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Unknown',
-      })
-    } catch (e) {
-      console.warn('Changelog write skipped:', e?.message)
-    }
+    const { error } = await supabase.from('beacon_changelog').insert({
+      release_id: releaseId,
+      action,
+      details,
+      user_email: user.email,
+      user_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Unknown',
+    })
+    if (error) console.warn('Changelog write failed:', error.code, error.message)
   }
 
   const filteredTestCases = testCases.filter(tc => {
@@ -722,8 +720,6 @@ export default function App() {
             error={csvError}
             testCasesCount={testCases.length}
             csvSources={csvSources}
-            grokKey={grokKey}
-            onSaveGrokKey={(k) => { setGrokKey(k); saveGrokKey(k) }}
           />
         )}
         {activeView === 'releases' && (
@@ -764,7 +760,6 @@ export default function App() {
             onRefresh={fetchFromGithub}
             testCasesLoaded={testCases.length > 0}
             onChecklistChange={(key, val) => updateChecklist(activeRelease.id, key, val)}
-            grokKey={grokKey}
           />
         )}
       </main>
@@ -1376,19 +1371,11 @@ function AnalyticsView({ allTestCases, testCases, releases }) {
 }
 
 // ── Settings View ──────────────────────────────────────────────────────────────
-function SettingsView({ config, onSave, onLoadFiles, loading, progress, error, testCasesCount, csvSources, grokKey, onSaveGrokKey }) {
+function SettingsView({ config, onSave, onLoadFiles, loading, progress, error, testCasesCount, csvSources }) {
   const [form, setForm]       = useState({ ...DEFAULT_GITHUB_CONFIG, ...config })
-  const [grokInput, setGrokInput] = useState(grokKey || '')
-  const [grokSaved, setGrokSaved] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef(null)
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }))
-
-  const handleSaveGrok = () => {
-    onSaveGrokKey(grokInput.trim())
-    setGrokSaved(true)
-    setTimeout(() => setGrokSaved(false), 2000)
-  }
 
   const handleFiles = (files) => {
     const csvFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.csv'))
@@ -1410,39 +1397,10 @@ function SettingsView({ config, onSave, onLoadFiles, loading, progress, error, t
       <div className="topbar">
         <div className="topbar-left">
           <h1>Settings</h1>
-          <p className="topbar-subtitle">Configure your GitHub repository and AI integration</p>
+          <p className="topbar-subtitle">Configure your GitHub repository and test case sync</p>
         </div>
       </div>
       <div className="view">
-
-      {/* ── Groq AI key ── */}
-      <div className="settings-card" style={{ marginBottom: '1rem' }}>
-        <h3 className="card-title"><Sparkles size={14} /> Groq AI — Test Case Analyser</h3>
-        <p style={{ fontSize: '13px', color: 'var(--text2)', marginBottom: '1rem', lineHeight: 1.6 }}>
-          Paste your PR analysis into a release and let AI pick the relevant test cases for you.
-          Get your free API key from <strong style={{ color: 'var(--accent2)' }}>console.groq.com</strong> — no credit card required.
-        </p>
-        <div className="field-group" style={{ marginBottom: '0.75rem' }}>
-          <label>Groq API Key</label>
-          <input
-            type="password"
-            value={grokInput}
-            onChange={e => setGrokInput(e.target.value)}
-            placeholder="gsk_xxxxxxxxxxxxxxxxxxxx"
-          />
-          <span className="field-hint">Stored locally in your browser — never sent anywhere except Groq's API.</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <button className="btn-primary" onClick={handleSaveGrok} style={{ width: 'auto' }}>
-            {grokSaved ? <><CheckCircle size={13} /> Saved!</> : <><Sparkles size={13} /> Save Key</>}
-          </button>
-          {grokKey && !grokSaved && (
-            <span style={{ fontSize: '12px', color: 'var(--green)', display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <CheckCircle size={12} /> Key configured
-            </span>
-          )}
-        </div>
-      </div>
 
       {/* ── GitHub multi-folder ── */}
       <div className="settings-card" style={{ marginBottom: '1rem' }}>
@@ -1831,6 +1789,10 @@ function ReleasesView({ releases, onNew, onOpen, onDelete, onClone, getStats, sh
 
                         {/* Actions */}
                         <div style={{ display: 'flex', gap: 2, justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
+                          <button className="icon-btn" title="Copy link to release" onClick={() => {
+                            const url = `${window.location.origin}${window.location.pathname}?release=${r.id}`
+                            navigator.clipboard.writeText(url)
+                          }}><ExternalLink size={13} /></button>
                           <button className="icon-btn" title="Clone release" onClick={() => onClone(r)}><Copy size={13} /></button>
                         </div>
                       </div>
@@ -1850,7 +1812,15 @@ function ReleasesView({ releases, onNew, onOpen, onDelete, onClone, getStats, sh
 function ReleaseDetailView({ release, allTestCases, searchQ, setSearchQ, onToggle, onBulkToggle, onStatusChange, onNotesChange, onBack, onExport, getStats, loadingCsv, onRefresh, testCasesLoaded, onChecklistChange }) {
   const [tab, setTab] = useState('run')
   const [copied, setCopied] = useState(false)
+  const [copiedLink, setCopiedLink] = useState(false)
   const s = getStats(release)
+
+  function copyLink() {
+    const url = `${window.location.origin}${window.location.pathname}?release=${release.id}`
+    navigator.clipboard.writeText(url)
+    setCopiedLink(true)
+    setTimeout(() => setCopiedLink(false), 2000)
+  }
   const ship = getShipStatus(release, s)
   const env = release.environment || 'Staging'
   const envCfg = ENV_CONFIG[env] || ENV_CONFIG.Staging
@@ -1904,10 +1874,17 @@ function ReleaseDetailView({ release, allTestCases, searchQ, setSearchQ, onToggl
               )}
               {release.qaResource && <span className="person-badge qa"><User size={10} /> QA: {release.qaResource}</span>}
               {release.reviewer && <span className="person-badge rev"><UserCheck size={10} /> Rev: {release.reviewer}</span>}
+              <span style={{ fontSize: 10, color: 'var(--text4)', fontFamily: 'monospace', background: 'var(--bg3)', padding: '2px 6px', borderRadius: 4, border: '1px solid var(--border)' }}>
+                ID: {release.id}
+              </span>
             </div>
           </div>
         </div>
         <div className="topbar-right">
+          <button className={`btn-ghost ${copiedLink ? 'copied' : ''}`} onClick={copyLink}>
+            {copiedLink ? <CheckCircle size={13} /> : <ExternalLink size={13} />}
+            {copiedLink ? 'Link Copied!' : 'Copy Link'}
+          </button>
           <button className={`btn-copy ${copied ? 'copied' : ''}`} onClick={copySummary}>
             {copied ? <CheckCircle size={13} /> : <Copy size={13} />}
             {copied ? 'Copied!' : 'Copy Summary'}
