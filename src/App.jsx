@@ -6,11 +6,11 @@ import {
   Download, Settings, X, AlertCircle, SkipForward, Layers,
   Upload, Tag, FileText, ChevronRight, Filter, BarChart2,
   Radio, User, UserCheck, Copy, TrendingUp, Zap, Sparkles, Bot, ThumbsUp, ThumbsDown,
-  Sun, Moon
+  LogOut, History
 } from 'lucide-react'
 import { supabase } from './lib/supabase.js'
 
-const CHART_COLORS = ['#7B6EF6', '#34D9B3', '#F5C243', '#3B9EFF', '#F07A6E', '#A89BF8', '#22c97a', '#FF8C69']
+const CHART_COLORS = ['#6366F1', '#10B981', '#F59E0B', '#3B82F6', '#EF4444', '#8B5CF6', '#14B8A6', '#F97316']
 import './App.css'
 
 // GitHub config stays in localStorage (contains sensitive tokens)
@@ -126,16 +126,11 @@ function LabelChips({ labels, max = 0 }) {
 
 // ── Root App ───────────────────────────────────────────────────────────────────
 export default function App() {
-  const [theme, setTheme] = useState(() => localStorage.getItem('beacon_theme') || 'light')
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme)
-    localStorage.setItem('beacon_theme', theme)
-  }, [theme])
 
   const [releases, setReleases]               = useState([])
   const [githubConfig, setGithubConfig]       = useState(loadGithubConfig)
   const [grokKey, setGrokKey]                 = useState(loadGrokKey)
-  const [dbLoading, setDbLoading]             = useState(true)
+  const [dbLoading, setDbLoading]             = useState(false)
   const [activeView, setActiveView]           = useState('releases')
   const [activeReleaseId, setActiveReleaseId] = useState(null)
   const [testCases, setTestCases]             = useState([])
@@ -148,9 +143,22 @@ export default function App() {
   const [showNewRelease, setShowNewRelease]   = useState(false)
   const [newRelease, setNewRelease]           = useState({ name: '', jiraTicket: '', jiraUrl: '', description: '', qaResource: '', reviewer: '', releaseDate: '', environment: 'Staging' })
   const notesTimerRef                         = useRef({})
+  const [user, setUser]                       = useState(null)
+  const [authLoading, setAuthLoading]         = useState(true)
 
-  // Load all releases + their test cases from Supabase on mount
-  useEffect(() => { loadFromSupabase() }, [])
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null)
+      setAuthLoading(false)
+      if (session?.user) loadFromSupabase()
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      setUser(session?.user ?? null)
+      if (event === 'SIGNED_IN') loadFromSupabase()
+      if (event === 'SIGNED_OUT') { setReleases([]); setTestCases([]); setAllTestCases([]) }
+    })
+    return () => subscription.unsubscribe()
+  }, [])
 
   const loadFromSupabase = async () => {
     setDbLoading(true)
@@ -455,6 +463,7 @@ export default function App() {
     const rel = releases.find(r => r.id === releaseId)
     const updated = { ...(rel?.checklist || {}), [key]: checked }
     await supabase.from('beacon_releases').update({ checklist: updated }).eq('id', releaseId)
+    logChange(releaseId, 'checklist_change', { key, checked })
   }
 
   const toggleTestCase = async (releaseId, tc) => {
@@ -475,6 +484,7 @@ export default function App() {
       const { error } = await supabase.from('beacon_test_cases')
         .delete().eq('release_id', releaseId).eq('tc_id', tc.id)
       if (error) console.error('Failed to remove test case:', error)
+      else logChange(releaseId, 'remove_tc', { tcId: tc.id, title: tc.title })
     } else {
       const { error } = await supabase.from('beacon_test_cases').insert({
         release_id: releaseId, tc_id: tc.id, title: tc.title,
@@ -484,6 +494,7 @@ export default function App() {
         source: tc.source, status: 'pending', notes: '',
       })
       if (error) console.error('Failed to add test case:', error)
+      else logChange(releaseId, 'add_tc', { tcId: tc.id, title: tc.title })
     }
   }
 
@@ -513,12 +524,14 @@ export default function App() {
       if (toInsert.length) {
         const { error } = await supabase.from('beacon_test_cases').insert(toInsert)
         if (error) console.error('Failed to bulk add:', error)
+        else logChange(releaseId, 'bulk_add', { count: toInsert.length })
       }
     } else {
       const ids = tcs.map(t => t.id)
       const { error } = await supabase.from('beacon_test_cases')
         .delete().eq('release_id', releaseId).in('tc_id', ids)
       if (error) console.error('Failed to bulk remove:', error)
+      else logChange(releaseId, 'bulk_remove', { count: tcs.length })
     }
   }
 
@@ -533,6 +546,7 @@ export default function App() {
       .update({ status, updated_at: updatedAt })
       .eq('release_id', releaseId).eq('tc_id', tcId)
     if (error) console.error('Failed to update status:', error)
+    else logChange(releaseId, 'status_change', { tcId, status })
   }
 
   const updateTestNotes = (releaseId, tcId, notes) => {
@@ -563,6 +577,21 @@ export default function App() {
     a.click()
   }
 
+  const logChange = async (releaseId, action, details = {}) => {
+    if (!user) return
+    try {
+      await supabase.from('beacon_changelog').insert({
+        release_id: releaseId,
+        action,
+        details,
+        user_email: user.email,
+        user_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Unknown',
+      })
+    } catch (e) {
+      console.warn('Changelog write skipped:', e?.message)
+    }
+  }
+
   const filteredTestCases = testCases.filter(tc => {
     if (!searchQ) return true
     const q = searchQ.toLowerCase()
@@ -580,16 +609,36 @@ export default function App() {
     }
   }
 
+  if (authLoading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#111827' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ width: 44, height: 44, borderRadius: 11, background: 'linear-gradient(135deg, #F59E0B, #D97706)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', boxShadow: '0 4px 16px rgba(245,158,11,0.4)' }}>
+            <Radio size={20} color="#111827" strokeWidth={2.5} />
+          </div>
+          <p style={{ fontSize: '13px', fontWeight: 800, fontFamily: 'var(--font-head)', marginBottom: 8, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#F9FAFB' }}>Beacon</p>
+          <p style={{ fontSize: '12px', color: '#6B7280', display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center' }}>
+            <RefreshCw size={12} className="spin" style={{ color: '#9CA3AF' }} /> Authenticating…
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return <AuthView onAuth={setUser} />
+  }
+
   if (dbLoading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#0F172A' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#111827' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ width: 44, height: 44, borderRadius: 11, background: 'linear-gradient(135deg, #F59E0B, #D97706)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', boxShadow: '0 4px 16px rgba(245,158,11,0.45)' }}>
-            <Radio size={20} color="#0F172A" strokeWidth={2.5} />
+          <div style={{ width: 44, height: 44, borderRadius: 11, background: 'linear-gradient(135deg, #F59E0B, #D97706)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', boxShadow: '0 4px 16px rgba(245,158,11,0.4)' }}>
+            <Radio size={20} color="#111827" strokeWidth={2.5} />
           </div>
-          <p style={{ fontSize: '13px', fontWeight: 800, fontFamily: 'var(--font-head)', marginBottom: 8, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#F8FAFC' }}>Beacon</p>
-          <p style={{ fontSize: '12px', color: '#64748B', display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center' }}>
-            <RefreshCw size={12} className="spin" /> Loading…
+          <p style={{ fontSize: '13px', fontWeight: 800, fontFamily: 'var(--font-head)', marginBottom: 8, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#F9FAFB' }}>Beacon</p>
+          <p style={{ fontSize: '12px', color: '#6B7280', display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center' }}>
+            <RefreshCw size={12} className="spin" style={{ color: '#9CA3AF' }} /> Loading…
           </p>
         </div>
       </div>
@@ -599,63 +648,65 @@ export default function App() {
   return (
     <div className="app">
       <aside className="sidebar">
+        {/* Logo */}
         <div className="logo">
           <div className="logo-icon-wrap">
-            <Radio size={18} color="#fff" strokeWidth={2.2} />
+            <Radio size={17} color="#111827" strokeWidth={2.5} />
           </div>
           <div className="logo-text">
             <span className="logo-name">Beacon</span>
-            <span className="logo-tagline">by Datman</span>
+            <span className="logo-tagline">Datman QA</span>
           </div>
         </div>
 
-        <div className="nav-section-label">Tools</div>
+        {/* Navigation */}
         <nav className="nav">
           <button className={`nav-item ${activeView === 'releases' || activeView === 'release-detail' ? 'active' : ''}`}
             onClick={() => setActiveView('releases')}>
-            <CheckCircle size={15} />
-            <div className="nav-item-text">
-              <span className="nav-item-label">Releases</span>
-              <span className="nav-item-sub">Track &amp; manage</span>
-            </div>
+            <Layers size={16} />
+            <span className="nav-item-label">Releases</span>
           </button>
           <button className={`nav-item ${activeView === 'coverage' ? 'active' : ''}`}
             onClick={() => setActiveView('coverage')}>
-            <BarChart2 size={15} />
+            <BarChart2 size={16} />
             <div className="nav-item-text">
               <span className="nav-item-label">Manual Cases</span>
-              <span className="nav-item-sub">Can't be automated</span>
             </div>
+            <span className="nav-badge">Manual</span>
           </button>
           <button className={`nav-item ${activeView === 'analytics' ? 'active' : ''}`}
             onClick={() => setActiveView('analytics')}>
-            <TrendingUp size={15} />
-            <div className="nav-item-text">
-              <span className="nav-item-label">Full Coverage</span>
-              <span className="nav-item-sub">All providers &amp; methods</span>
-            </div>
+            <TrendingUp size={16} />
+            <span className="nav-item-label">Full Coverage</span>
           </button>
           <button className={`nav-item ${activeView === 'settings' ? 'active' : ''}`}
             onClick={() => setActiveView('settings')}>
-            <Settings size={15} /> Settings
+            <Settings size={16} />
+            <span className="nav-item-label">Settings</span>
           </button>
         </nav>
 
+        {/* Footer */}
         <div className="sidebar-footer">
-          <span className="tc-count">
-            {testCases.length > 0 ? `${testCases.length} test cases loaded` : 'No test cases loaded'}
-          </span>
-          <button className="nav-item" onClick={loadFromSupabase} style={{ opacity: 0.7, fontSize: '12px' }}>
-            <RefreshCw size={13} /> Refresh
-          </button>
-          <button className="theme-toggle" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}>
-            {theme === 'dark' ? <Moon size={14} /> : <Sun size={14} />}
-            {theme === 'dark' ? 'Night mode' : 'Light mode'}
-            <span className="theme-toggle-track"><span className="theme-toggle-thumb" /></span>
-          </button>
-          <div className="brand-credit">
-            <span>Exclusive Datman QA Tool</span>
-            <span>Crafted by Sundar</span>
+          <div className="sidebar-user">
+            <div className="sidebar-user-avatar">
+              {user?.email?.[0]?.toUpperCase() || 'U'}
+            </div>
+            <div className="sidebar-user-info">
+              <span className="sidebar-user-name">
+                {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'}
+              </span>
+              <span className="sidebar-user-role">{user?.email}</span>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button className="sidebar-action-btn" style={{ flex: 1 }} onClick={loadFromSupabase}>
+              <RefreshCw size={14} /> Refresh
+            </button>
+            <button className="sidebar-action-btn" title="Sign out"
+              onClick={async () => { await supabase.auth.signOut(); setUser(null) }}>
+              <LogOut size={14} />
+            </button>
           </div>
         </div>
       </aside>
@@ -817,29 +868,32 @@ function CoverageView({ testCases }) {
 
   if (!total) {
     return (
-      <div className="view">
-        <div className="view-header">
-          <div><h1>Coverage</h1><p className="subtitle">Manual test case insights</p></div>
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+        <div className="topbar">
+          <div className="topbar-left"><h1>Manual Cases</h1><p className="topbar-subtitle">Can't-be-automated test case insights</p></div>
         </div>
-        <div className="empty-state">
-          <BarChart2 size={32} strokeWidth={1} />
-          <p>No test cases loaded</p>
-          <span>Go to Settings to sync your CSV files</span>
+        <div className="view">
+          <div className="empty-state">
+            <BarChart2 size={36} strokeWidth={1} color="var(--text4)" />
+            <p>No test cases loaded</p>
+            <span>Go to Settings to sync your CSV files from GitHub</span>
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="view cov-view">
-      <div className="view-header">
-        <div>
-          <h1>Coverage</h1>
-          <p className="subtitle">
-            {total} "Can't be automated" test cases across {folderEntries.length} source folder{folderEntries.length !== 1 ? 's' : ''}
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+      <div className="topbar">
+        <div className="topbar-left">
+          <h1>Manual Cases</h1>
+          <p className="topbar-subtitle">
+            {total} can't-be-automated test cases across {folderEntries.length} source folder{folderEntries.length !== 1 ? 's' : ''}
           </p>
         </div>
       </div>
+      <div className="view" style={{ maxWidth: 1080 }}>
 
       {/* ── Stat cards ── */}
       <div className="cov-stat-row">
@@ -970,6 +1024,7 @@ function CoverageView({ testCases }) {
           </div>
         )
       })}
+      </div>
     </div>
   )
 }
@@ -1095,34 +1150,37 @@ function AnalyticsView({ allTestCases, testCases, releases }) {
 
   if (!total) {
     return (
-      <div className="view">
-        <div className="view-header">
-          <div><h1>Analytics</h1><p className="subtitle">Provider &amp; method coverage insights</p></div>
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+        <div className="topbar">
+          <div className="topbar-left"><h1>Full Coverage</h1><p className="topbar-subtitle">Provider &amp; method coverage insights</p></div>
         </div>
-        <div className="empty-state">
-          <TrendingUp size={32} strokeWidth={1} />
-          <p>No test data available</p>
-          <span>Sync your CSV files from GitHub or upload them in Settings</span>
+        <div className="view">
+          <div className="empty-state">
+            <TrendingUp size={36} strokeWidth={1} color="var(--text4)" />
+            <p>No test data available</p>
+            <span>Sync your CSV files from GitHub or upload them in Settings</span>
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="view an-view">
-      <div className="view-header">
-        <div>
-          <h1>Analytics</h1>
-          <p className="subtitle">
-            {total.toLocaleString()} test cases · {providerEntries.length} provider{providerEntries.length !== 1 ? 's' : ''} · {Object.values(hierarchy).reduce((s, d) => s + Object.keys(d.files).length, 0)} files · {methodEntries.length} method{methodEntries.length !== 1 ? 's' : ''}
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+      <div className="topbar">
+        <div className="topbar-left">
+          <h1>Full Coverage</h1>
+          <p className="topbar-subtitle">
+            {total.toLocaleString()} test cases · {providerEntries.length} provider{providerEntries.length !== 1 ? 's' : ''} · {methodEntries.length} method{methodEntries.length !== 1 ? 's' : ''}
           </p>
         </div>
         {!hasFullData && (
-          <span className="an-sync-badge">
-            <Zap size={12} /> Sync from GitHub for full automation breakdown
-          </span>
+          <div className="topbar-right">
+            <span className="an-sync-badge"><Zap size={12} /> Sync from GitHub for full breakdown</span>
+          </div>
         )}
       </div>
+      <div className="view" style={{ maxWidth: 1100 }}>
 
       {/* ── Summary stat cards ── */}
       <div className="an-stat-row">
@@ -1312,6 +1370,7 @@ function AnalyticsView({ allTestCases, testCases, releases }) {
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }
@@ -1347,13 +1406,14 @@ function SettingsView({ config, onSave, onLoadFiles, loading, progress, error, t
   }, {})
 
   return (
-    <div className="view">
-      <div className="view-header">
-        <div>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+      <div className="topbar">
+        <div className="topbar-left">
           <h1>Settings</h1>
-          <p className="subtitle">Only "Can't be automated" rows are loaded — everything else is ignored</p>
+          <p className="topbar-subtitle">Configure your GitHub repository and AI integration</p>
         </div>
       </div>
+      <div className="view">
 
       {/* ── Groq AI key ── */}
       <div className="settings-card" style={{ marginBottom: '1rem' }}>
@@ -1523,6 +1583,7 @@ function SettingsView({ config, onSave, onLoadFiles, loading, progress, error, t
           Rows where <code>Automation Status</code> ≠ "Cant be automated" are silently ignored.
         </p>
       </div>
+      </div>
     </div>
   )
 }
@@ -1533,7 +1594,6 @@ const DEFAULT_CHECKLIST = [
   { key: 'regression',  label: 'Full regression run' },
   { key: 'p0_resolved', label: 'P0/P1 failures resolved or accepted' },
   { key: 'browser',     label: 'Browser compatibility verified' },
-  { key: 'api',         label: 'API contract tests passed' },
   { key: 'qa_signoff',  label: 'QA sign-off obtained' },
   { key: 'approved',    label: 'Reviewer approved' },
 ]
@@ -1575,189 +1635,213 @@ function ReleasesView({ releases, onNew, onOpen, onDelete, onClone, getStats, sh
   const usedEnvs = [...new Set(releases.map(r => r.environment || 'Staging'))]
 
   return (
-    <div className="view">
-      <div className="view-header">
-        <div>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+      {/* Top bar */}
+      <div className="topbar">
+        <div className="topbar-left">
           <h1>Releases</h1>
-          <p className="subtitle">
+          <p className="topbar-subtitle">
             {releases.length} release{releases.length !== 1 ? 's' : ''} tracked
             {releases.length > 0 && ` · ${releases.reduce((s, r) => s + r.testCases.length, 0)} test cases`}
-            {usedEnvs.length > 0 && ` · ${usedEnvs.join(', ')}`}
           </p>
         </div>
-        <button className="btn-primary" onClick={onNew}><Plus size={14} /> New Release</button>
+        <div className="topbar-right">
+          <button className="btn-primary" onClick={onNew}><Plus size={14} /> New Release</button>
+        </div>
       </div>
 
-      {/* Env filter chips */}
-      {usedEnvs.length > 1 && (
-        <div className="filter-chips" style={{ marginBottom: '1rem' }}>
-          <button className={`filter-chip ${envFilter === 'all' ? 'active' : ''}`} onClick={() => setEnvFilter('all')}>
-            All Environments
-          </button>
-          {usedEnvs.map(env => {
-            const cfg = ENV_CONFIG[env] || ENV_CONFIG.Staging
-            return (
-              <button key={env}
-                className={`filter-chip ${envFilter === env ? 'active' : ''}`}
-                style={envFilter === env ? { color: cfg.color, background: cfg.bg, borderColor: cfg.border } : {}}
-                onClick={() => setEnvFilter(p => p === env ? 'all' : env)}>
-                {env}
-              </button>
-            )
-          })}
-        </div>
-      )}
-
-      {showNew && (
-        <div className="new-release-card">
-          <div className="new-release-header">
-            <span>New Release</span>
-            <button className="icon-btn" onClick={onCancelNew}><X size={15} /></button>
-          </div>
-          <div className="field-row">
-            <div className="field-group">
-              <label>Release Name *</label>
-              <input value={newRelease.name} onChange={e => set('name', e.target.value)} placeholder="v2.4.1 — Payments Revamp" />
-            </div>
-            <div className="field-group">
-              <label>Jira Ticket</label>
-              <input value={newRelease.jiraTicket} onChange={e => set('jiraTicket', e.target.value)} placeholder="REL-123" />
-            </div>
-          </div>
-          <div className="field-row">
-            <div className="field-group">
-              <label>Release Date</label>
-              <input type="date" value={newRelease.releaseDate} onChange={e => set('releaseDate', e.target.value)} />
-            </div>
-            <div className="field-group">
-              <label>Environment</label>
-              <select value={newRelease.environment} onChange={e => set('environment', e.target.value)}>
-                {Object.keys(ENV_CONFIG).map(k => <option key={k} value={k}>{k}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="field-group">
-            <label>Jira URL</label>
-            <input value={newRelease.jiraUrl} onChange={e => set('jiraUrl', e.target.value)}
-              placeholder="https://your-org.atlassian.net/browse/REL-123" />
-          </div>
-          <div className="field-row">
-            <div className="field-group">
-              <label>QA Resource</label>
-              <input value={newRelease.qaResource} onChange={e => set('qaResource', e.target.value)} placeholder="e.g. Rohit" />
-            </div>
-            <div className="field-group">
-              <label>Reviewer</label>
-              <input value={newRelease.reviewer} onChange={e => set('reviewer', e.target.value)} placeholder="e.g. Nitish" />
-            </div>
-          </div>
-          <div className="field-group">
-            <label>Description</label>
-            <textarea value={newRelease.description} onChange={e => set('description', e.target.value)}
-              placeholder="What's being tested in this release…" rows={2} style={{ resize: 'vertical' }} />
-          </div>
-          <button className="btn-primary" onClick={onAddRelease} disabled={!newRelease.name.trim()}>
-            Create Release
-          </button>
-        </div>
-      )}
-
-      {releases.length === 0 && !showNew && (
-        <div className="empty-state">
-          <Layers size={32} strokeWidth={1} />
-          <p>No releases yet</p>
-          <span>Create a release to start tracking manual test cases</span>
-        </div>
-      )}
-
-      {Object.entries(monthGroups).map(([month, monthReleases]) => {
-        const collapsed = collapsedMonths[month]
-        const monthPass = monthReleases.reduce((sum, r) => sum + getStats(r).pass, 0)
-        const monthTotal = monthReleases.reduce((sum, r) => sum + getStats(r).total, 0)
-        return (
-          <div key={month} className="month-group">
-            <button className="month-header" onClick={() => toggleMonth(month)}>
-              <span className="month-left">
-                {collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
-                <span className="month-label">{month}</span>
-                <span className="month-count">{monthReleases.length} release{monthReleases.length !== 1 ? 's' : ''}</span>
-              </span>
-              <span className="month-progress">
-                {monthPass}/{monthTotal} passed
-                {monthTotal > 0 && <span className="month-pct">{Math.round(monthPass / monthTotal * 100)}%</span>}
-              </span>
+      <div className="view">
+        {/* Filter bar */}
+        {usedEnvs.length > 1 && (
+          <div className="filter-bar">
+            <button className={`filter-chip ${envFilter === 'all' ? 'active' : ''}`} onClick={() => setEnvFilter('all')}>
+              All Environments
             </button>
+            {usedEnvs.map(env => {
+              const cfg = ENV_CONFIG[env] || ENV_CONFIG.Staging
+              return (
+                <button key={env}
+                  className={`filter-chip ${envFilter === env ? 'active' : ''}`}
+                  style={envFilter === env ? { color: cfg.color, background: cfg.bg, borderColor: cfg.border } : {}}
+                  onClick={() => setEnvFilter(p => p === env ? 'all' : env)}>
+                  {env}
+                </button>
+              )
+            })}
+          </div>
+        )}
 
-            {!collapsed && (
-              <div className="releases-grid" style={{ padding: '0 0 8px' }}>
-                {monthReleases.map(r => {
-                  const s = getStats(r)
-                  const pct = s.total > 0 ? Math.round((s.pass / s.total) * 100) : 0
-                  const ship = getShipStatus(r, s)
-                  const env = r.environment || 'Staging'
-                  const envCfg = ENV_CONFIG[env] || ENV_CONFIG.Staging
-                  return (
-                    <div className={`release-card ${ship?.label === 'Ready to Ship' ? 'ship-ready' : ship?.label === 'Blocked' ? 'ship-blocked' : ''}`}
-                      key={r.id} onClick={() => onOpen(r.id)}
-                      style={{ borderLeftColor: ship ? ship.color : envCfg.color }}>
-                      <div className="release-card-top">
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginBottom: '3px' }}>
-                            <div className="release-name">{r.name}</div>
-                            <span className="env-badge" style={{ color: envCfg.color, background: envCfg.bg, border: `1px solid ${envCfg.border}` }}>{env}</span>
-                            {ship && (
-                              <span className="ship-badge" style={{ color: ship.color, background: ship.bg, border: `1px solid ${ship.border}` }}>
-                                {ship.label}
-                              </span>
-                            )}
+        {/* New release form */}
+        {showNew && (
+          <div className="new-release-card">
+            <div className="new-release-header">
+              <span>New Release</span>
+              <button className="icon-btn" onClick={onCancelNew}><X size={15} /></button>
+            </div>
+            <div className="field-row">
+              <div className="field-group">
+                <label>Release Name *</label>
+                <input value={newRelease.name} onChange={e => set('name', e.target.value)} placeholder="v2.4.1 — Payments Revamp" />
+              </div>
+              <div className="field-group">
+                <label>Jira Ticket</label>
+                <input value={newRelease.jiraTicket} onChange={e => set('jiraTicket', e.target.value)} placeholder="REL-123" />
+              </div>
+            </div>
+            <div className="field-row">
+              <div className="field-group">
+                <label>Release Date</label>
+                <input type="date" value={newRelease.releaseDate} onChange={e => set('releaseDate', e.target.value)} />
+              </div>
+              <div className="field-group">
+                <label>Environment</label>
+                <select value={newRelease.environment} onChange={e => set('environment', e.target.value)}>
+                  {Object.keys(ENV_CONFIG).map(k => <option key={k} value={k}>{k}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="field-group">
+              <label>Jira URL</label>
+              <input value={newRelease.jiraUrl} onChange={e => set('jiraUrl', e.target.value)}
+                placeholder="https://your-org.atlassian.net/browse/REL-123" />
+            </div>
+            <div className="field-row">
+              <div className="field-group">
+                <label>QA Resource</label>
+                <input value={newRelease.qaResource} onChange={e => set('qaResource', e.target.value)} placeholder="e.g. Rohit" />
+              </div>
+              <div className="field-group">
+                <label>Reviewer</label>
+                <input value={newRelease.reviewer} onChange={e => set('reviewer', e.target.value)} placeholder="e.g. Nitish" />
+              </div>
+            </div>
+            <div className="field-group">
+              <label>Description</label>
+              <textarea value={newRelease.description} onChange={e => set('description', e.target.value)}
+                placeholder="What's being tested in this release…" rows={2} style={{ resize: 'vertical' }} />
+            </div>
+            <button className="btn-primary" onClick={onAddRelease} disabled={!newRelease.name.trim()}>
+              <Plus size={13} /> Create Release
+            </button>
+          </div>
+        )}
+
+        {releases.length === 0 && !showNew && (
+          <div className="empty-state">
+            <Layers size={36} strokeWidth={1} color="var(--text4)" />
+            <p>No releases yet</p>
+            <span>Create your first release to start tracking manual test cases</span>
+            <button className="btn-primary" style={{ marginTop: 8 }} onClick={onNew}><Plus size={14} /> New Release</button>
+          </div>
+        )}
+
+        {/* Month-grouped release table */}
+        {Object.entries(monthGroups).map(([month, monthReleases]) => {
+          const collapsed = collapsedMonths[month]
+          const monthPass = monthReleases.reduce((sum, r) => sum + getStats(r).pass, 0)
+          const monthTotal = monthReleases.reduce((sum, r) => sum + getStats(r).total, 0)
+          return (
+            <div key={month} className="month-group">
+              <button className="month-header" onClick={() => toggleMonth(month)}>
+                <span className="month-left">
+                  {collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+                  <span className="month-label">{month}</span>
+                  <span className="month-count">{monthReleases.length} release{monthReleases.length !== 1 ? 's' : ''}</span>
+                </span>
+                <span className="month-progress">
+                  {monthPass}/{monthTotal} passed
+                  {monthTotal > 0 && <span className="month-pct">{Math.round(monthPass / monthTotal * 100)}%</span>}
+                </span>
+              </button>
+
+              {!collapsed && (
+                <div className="releases-table">
+                  {/* Table header */}
+                  <div className="releases-table-header">
+                    <span>Release</span>
+                    <span>Environment</span>
+                    <span>Status</span>
+                    <span>People</span>
+                    <span>Progress</span>
+                    <span>Tests</span>
+                    <span></span>
+                  </div>
+                  {monthReleases.map(r => {
+                    const s = getStats(r)
+                    const pct = s.total > 0 ? Math.round((s.pass / s.total) * 100) : 0
+                    const ship = getShipStatus(r, s)
+                    const env = r.environment || 'Staging'
+                    const envCfg = ENV_CONFIG[env] || ENV_CONFIG.Staging
+                    return (
+                      <div className="release-row" key={r.id} onClick={() => onOpen(r.id)}>
+                        {/* Release name + meta */}
+                        <div className="release-row-name">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <span className="release-row-title">{r.name}</span>
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
                             {r.jiraTicket && (
                               <a className="jira-badge" href={r.jiraUrl || '#'} target="_blank" rel="noreferrer"
                                 onClick={e => e.stopPropagation()}>
-                                <ExternalLink size={11} /> {r.jiraTicket}
+                                <ExternalLink size={10} /> {r.jiraTicket}
                               </a>
                             )}
                             {r.releaseDate && (
-                              <span style={{ fontSize: '11px', color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                📅 {new Date(r.releaseDate + 'T00:00:00').toLocaleDateString('default', { day: 'numeric', month: 'short' })}
+                              <span style={{ fontSize: '11px', color: 'var(--text3)' }}>
+                                {new Date(r.releaseDate + 'T00:00:00').toLocaleDateString('default', { day: 'numeric', month: 'short', year: 'numeric' })}
                               </span>
                             )}
                           </div>
                         </div>
-                        <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
-                          <button className="icon-btn" title="Clone release" onClick={e => { e.stopPropagation(); onClone(r) }}>
-                            <Copy size={14} />
-                          </button>
-                          <button className="icon-btn danger" onClick={e => { e.stopPropagation(); onDelete(r.id) }}>
-                            <Trash2 size={14} />
-                          </button>
+
+                        {/* Environment */}
+                        <div>
+                          <span className="env-badge" style={{ color: envCfg.color, background: envCfg.bg, border: `1px solid ${envCfg.border}` }}>{env}</span>
+                        </div>
+
+                        {/* Ship status */}
+                        <div>
+                          {ship ? (
+                            <span className="ship-badge" style={{ color: ship.color, background: ship.bg, border: `1px solid ${ship.border}` }}>
+                              {ship.label}
+                            </span>
+                          ) : <span style={{ color: 'var(--text4)', fontSize: 12 }}>—</span>}
+                        </div>
+
+                        {/* People */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                          {r.qaResource && <span style={{ fontSize: 12, color: 'var(--text2)' }}><span style={{ color: 'var(--text3)' }}>QA:</span> {r.qaResource}</span>}
+                          {r.reviewer && <span style={{ fontSize: 12, color: 'var(--text2)' }}><span style={{ color: 'var(--text3)' }}>Rev:</span> {r.reviewer}</span>}
+                        </div>
+
+                        {/* Progress bar */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <div className="progress-bar"><div className="progress-fill" style={{ width: `${pct}%` }} /></div>
+                          <span className="progress-label">{pct}%</span>
+                        </div>
+
+                        {/* Stat counts */}
+                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                          {s.pass > 0 && <span className="stat-badge stat-pass">{s.pass}P</span>}
+                          {s.fail > 0 && <span className="stat-badge stat-fail">{s.fail}F</span>}
+                          {s.skip > 0 && <span className="stat-badge stat-skip">{s.skip}S</span>}
+                          {s.pending > 0 && <span className="stat-badge stat-pending">{s.pending}</span>}
+                          {s.total === 0 && <span style={{ fontSize: 12, color: 'var(--text4)' }}>No tests</span>}
+                        </div>
+
+                        {/* Actions */}
+                        <div style={{ display: 'flex', gap: 2, justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
+                          <button className="icon-btn" title="Clone release" onClick={() => onClone(r)}><Copy size={13} /></button>
                         </div>
                       </div>
-                      {r.description && <p className="release-desc">{r.description}</p>}
-                      {(r.qaResource || r.reviewer) && (
-                        <div className="release-people">
-                          {r.qaResource && <span className="person-badge qa"><User size={10} /> QA: {r.qaResource}</span>}
-                          {r.reviewer && <span className="person-badge rev"><UserCheck size={10} /> Reviewer: {r.reviewer}</span>}
-                        </div>
-                      )}
-                      <div className="release-stats">
-                        {Object.entries({ pass: s.pass, fail: s.fail, skip: s.skip, pending: s.pending }).map(([k, v]) => (
-                          <span key={k} className={`stat-badge stat-${k}`}>{v} {k}</span>
-                        ))}
-                      </div>
-                      <div className="release-footer">
-                        <div className="progress-bar"><div className="progress-fill" style={{ width: `${pct}%` }} /></div>
-                        <span className="progress-label">{pct}% · {s.total} tests</span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )
-      })}
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -1797,143 +1881,121 @@ function ReleaseDetailView({ release, allTestCases, searchQ, setSearchQ, onToggl
   }
 
   return (
-    <div className="view">
-      <div className="view-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <button className="icon-btn" onClick={onBack}>
-            <ChevronDown size={16} style={{ transform: 'rotate(90deg)' }} />
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+      {/* Top bar */}
+      <div className="topbar">
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+          <button className="icon-btn" onClick={onBack} style={{ marginTop: 2 }}>
+            <ChevronRight size={16} style={{ transform: 'rotate(180deg)' }} />
           </button>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <h1>{release.name}</h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span className="topbar-left" style={{ display: 'inline' }}>
+                <h1 style={{ display: 'inline', fontSize: 18 }}>{release.name}</h1>
+              </span>
               <span className="env-badge env-badge-lg" style={{ color: envCfg.color, background: envCfg.bg, border: `1px solid ${envCfg.border}` }}>{env}</span>
-              {ship && (
-                <span className="ship-badge ship-badge-lg" style={{ color: ship.color, background: ship.bg, border: `1px solid ${ship.border}` }}>
-                  {ship.label}
-                </span>
-              )}
+              {ship && <span className="ship-badge ship-badge-lg" style={{ color: ship.color, background: ship.bg, border: `1px solid ${ship.border}` }}>{ship.label}</span>}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
               {release.jiraTicket && (
                 <a className="jira-badge" href={release.jiraUrl || '#'} target="_blank" rel="noreferrer">
-                  <ExternalLink size={11} /> {release.jiraTicket}
+                  <ExternalLink size={10} /> {release.jiraTicket}
                 </a>
               )}
-              {release.qaResource && (
-                <span className="person-badge qa">
-                  <User size={10} /> QA: {release.qaResource}
-                </span>
-              )}
-              {release.reviewer && (
-                <span className="person-badge rev">
-                  <UserCheck size={10} /> Reviewer: {release.reviewer}
-                </span>
-              )}
+              {release.qaResource && <span className="person-badge qa"><User size={10} /> QA: {release.qaResource}</span>}
+              {release.reviewer && <span className="person-badge rev"><UserCheck size={10} /> Rev: {release.reviewer}</span>}
             </div>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div className="topbar-right">
           <button className={`btn-copy ${copied ? 'copied' : ''}`} onClick={copySummary}>
-            {copied ? <CheckCircle size={13} /> : <Download size={13} />}
+            {copied ? <CheckCircle size={13} /> : <Copy size={13} />}
             {copied ? 'Copied!' : 'Copy Summary'}
           </button>
           <button className="btn-ghost" onClick={onExport}><Download size={13} /> Export CSV</button>
         </div>
       </div>
 
-      {/* Stats bar */}
-      <div className="stats-bar">
-        {Object.entries(STATUS_CONFIG).map(([k, cfg]) => {
-          const Icon = cfg.icon
-          return (
-            <div className="stat-item" key={k}>
-              <Icon size={14} color={cfg.color} />
-              <span style={{ color: cfg.color }}>{s[k]}</span>
-              <span className="stat-lbl">{cfg.label}</span>
-            </div>
-          )
-        })}
-        <div className="stat-item">
-          <Layers size={14} color="var(--accent2)" />
-          <span style={{ color: 'var(--accent2)' }}>{s.total}</span>
-          <span className="stat-lbl">Total</span>
-        </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
+      <div className="view">
+        {/* Stats bar */}
+        <div className="stats-bar">
+          {Object.entries(STATUS_CONFIG).map(([k, cfg]) => {
+            const Icon = cfg.icon
+            return (
+              <div className="stat-item" key={k}>
+                <Icon size={14} color={cfg.color} />
+                <span style={{ fontWeight: 700, fontSize: 14, color: cfg.color }}>{s[k]}</span>
+                <span className="stat-lbl">{cfg.label}</span>
+              </div>
+            )
+          })}
+          <div className="stat-item">
+            <Layers size={14} color="var(--text3)" />
+            <span style={{ fontWeight: 700, fontSize: 14 }}>{s.total}</span>
+            <span className="stat-lbl">Total</span>
+          </div>
           {s.total > 0 && (
-            <>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
               <span className="stats-pct">{Math.round((s.pass / s.total) * 100)}%</span>
               <div className="mini-progress">
                 <div className="mini-progress-fill" style={{ width: `${Math.round((s.pass / s.total) * 100)}%` }} />
               </div>
-            </>
+            </div>
           )}
         </div>
-      </div>
 
-      {/* Tabs */}
-      <div className="tabs">
-        <button className={`tab ${tab === 'run' ? 'active' : ''}`} onClick={() => setTab('run')}>
-          Run Tests ({s.total})
-        </button>
-        <button className={`tab ${tab === 'ai-pick' ? 'active' : ''}`} onClick={() => setTab('ai-pick')}
-          style={tab === 'ai-pick' ? {} : { color: 'var(--accent2)' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <Sparkles size={13} /> AI Pick
-          </span>
-        </button>
-        <button className={`tab ${tab === 'pick' ? 'active' : ''}`} onClick={() => setTab('pick')}>
-          Manual Pick {allTestCases.length > 0 && `(${allTestCases.length})`}
-        </button>
-        <button className={`tab ${tab === 'checklist' ? 'active' : ''}`} onClick={() => setTab('checklist')}>
-          Checklist {checklistDone > 0 && `(${checklistDone}/${DEFAULT_CHECKLIST.length})`}
-        </button>
-      </div>
-
-      {/* Search */}
-      <div className="search-bar">
-        <Search size={14} />
-        <input value={searchQ} onChange={e => setSearchQ(e.target.value)}
-          placeholder="Search by ID, scenario, module, label, priority…"
-          style={{ border: 'none', background: 'transparent', padding: '0' }} />
-        {searchQ && (
-          <button className="icon-btn" style={{ padding: '2px' }} onClick={() => setSearchQ('')}>
-            <X size={13} />
+        {/* Tabs */}
+        <div className="tabs">
+          <button className={`tab ${tab === 'run' ? 'active' : ''}`} onClick={() => setTab('run')}>
+            Run Tests {s.total > 0 && `(${s.total})`}
           </button>
+          <button className={`tab ${tab === 'ai-pick' ? 'active' : ''}`} onClick={() => setTab('ai-pick')}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <Sparkles size={13} /> AI Pick
+            </span>
+          </button>
+          <button className={`tab ${tab === 'pick' ? 'active' : ''}`} onClick={() => setTab('pick')}>
+            Pick Test Cases {allTestCases.length > 0 && `(${allTestCases.length})`}
+          </button>
+          <button className={`tab ${tab === 'checklist' ? 'active' : ''}`} onClick={() => setTab('checklist')}>
+            Checklist {checklistDone > 0 && `(${checklistDone}/${DEFAULT_CHECKLIST.length})`}
+          </button>
+          <button className={`tab ${tab === 'changelog' ? 'active' : ''}`} onClick={() => setTab('changelog')}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <History size={13} /> Change Log
+            </span>
+          </button>
+        </div>
+
+        {/* Search */}
+        <div className="search-bar">
+          <Search size={14} color="var(--text4)" />
+          <input value={searchQ} onChange={e => setSearchQ(e.target.value)}
+            placeholder="Search by ID, scenario, module, label, priority…" />
+          {searchQ && (
+            <button className="icon-btn" style={{ padding: '2px' }} onClick={() => setSearchQ('')}>
+              <X size={13} />
+            </button>
+          )}
+        </div>
+
+        {tab === 'ai-pick' && (
+          <AiPickPanel allTestCases={allTestCases} release={release} onBulkToggle={onBulkToggle} testCasesLoaded={testCasesLoaded} />
+        )}
+        {tab === 'pick' && (
+          <PickPanel allTestCases={allTestCases} release={release} onToggle={onToggle} onBulkToggle={onBulkToggle}
+            testCasesLoaded={testCasesLoaded} loadingCsv={loadingCsv} onRefresh={onRefresh} />
+        )}
+        {tab === 'run' && (
+          <RunPanel release={release} onStatusChange={onStatusChange} onNotesChange={onNotesChange} onDelete={onToggle} />
+        )}
+        {tab === 'checklist' && (
+          <ChecklistPanel checklist={release.checklist || {}} onChange={onChecklistChange} done={checklistDone} total={DEFAULT_CHECKLIST.length} />
+        )}
+        {tab === 'changelog' && (
+          <ChangelogPanel releaseId={release.id} />
         )}
       </div>
-
-      {tab === 'ai-pick' && (
-        <AiPickPanel
-          allTestCases={allTestCases}
-          release={release}
-          onBulkToggle={onBulkToggle}
-          testCasesLoaded={testCasesLoaded}
-        />
-      )}
-
-      {tab === 'pick' && (
-        <PickPanel
-          allTestCases={allTestCases}
-          release={release}
-          onToggle={onToggle}
-          onBulkToggle={onBulkToggle}
-          testCasesLoaded={testCasesLoaded}
-          loadingCsv={loadingCsv}
-          onRefresh={onRefresh}
-        />
-      )}
-
-      {tab === 'run' && (
-        <RunPanel
-          release={release}
-          onStatusChange={onStatusChange}
-          onNotesChange={onNotesChange}
-        />
-      )}
-
-      {tab === 'checklist' && (
-        <ChecklistPanel checklist={release.checklist || {}} onChange={onChecklistChange} done={checklistDone} total={DEFAULT_CHECKLIST.length} />
-      )}
     </div>
   )
 }
@@ -2311,7 +2373,7 @@ const PRIORITY_CHIPS = [
   { key: 'P2', label: 'P2 Medium',   cls: 'pri-p2' },
 ]
 
-function RunPanel({ release, onStatusChange, onNotesChange }) {
+function RunPanel({ release, onStatusChange, onNotesChange, onDelete }) {
   const [expandedId, setExpandedId]     = useState(null)
   const [groupByModule, setGroupByModule] = useState(true)
   const [filterStatus, setFilterStatus]  = useState('all')
@@ -2422,6 +2484,12 @@ function RunPanel({ release, onStatusChange, onNotesChange }) {
                         {cfg.label}
                       </button>
                     ))}
+                    {tc.status === 'pending' && onDelete && (
+                      <button className="icon-btn danger" title="Remove from run"
+                        onClick={() => onDelete(tc)}>
+                        <Trash2 size={13} />
+                      </button>
+                    )}
                     {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                   </div>
                 </div>
@@ -2474,6 +2542,263 @@ function RunPanel({ release, onStatusChange, onNotesChange }) {
           })}
         </div>
       ))}
+    </div>
+  )
+}
+
+// ── Change Log Panel ───────────────────────────────────────────────────────────
+function ChangelogPanel({ releaseId }) {
+  const [logs, setLogs]       = useState([])
+  const [loading, setLoading] = useState(true)
+  const [setupError, setSetupError] = useState(false)
+
+  useEffect(() => {
+    supabase
+      .from('beacon_changelog')
+      .select('*')
+      .eq('release_id', releaseId)
+      .order('created_at', { ascending: false })
+      .limit(100)
+      .then(({ data, error }) => {
+        if (error) {
+          if (error.code === '42P01') setSetupError(true)
+          else console.error(error)
+        } else {
+          setLogs(data || [])
+        }
+        setLoading(false)
+      })
+  }, [releaseId])
+
+  const ACTION_LABELS = {
+    status_change:   'Status changed',
+    add_tc:          'Test case added',
+    remove_tc:       'Test case removed',
+    bulk_add:        'Bulk added test cases',
+    bulk_remove:     'Bulk removed test cases',
+    checklist_change:'Checklist updated',
+  }
+
+  if (loading) return (
+    <div className="run-panel">
+      <div style={{ padding: '24px 16px', color: 'var(--text3)', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <RefreshCw size={13} className="spin" /> Loading change log…
+      </div>
+    </div>
+  )
+
+  if (setupError) return (
+    <div className="run-panel">
+      <div className="warn-box" style={{ marginBottom: 16 }}>
+        <AlertCircle size={13} />
+        The <strong>beacon_changelog</strong> table doesn't exist yet. Run this SQL in your Supabase dashboard:
+      </div>
+      <div className="code-block" style={{ fontSize: 12, lineHeight: 1.8 }}>
+        CREATE TABLE IF NOT EXISTS beacon_changelog (<br/>
+        &nbsp;&nbsp;id BIGSERIAL PRIMARY KEY,<br/>
+        &nbsp;&nbsp;release_id TEXT NOT NULL,<br/>
+        &nbsp;&nbsp;action TEXT NOT NULL,<br/>
+        &nbsp;&nbsp;details JSONB DEFAULT {"'{}'"} ,<br/>
+        &nbsp;&nbsp;user_email TEXT,<br/>
+        &nbsp;&nbsp;user_name TEXT,<br/>
+        &nbsp;&nbsp;created_at TIMESTAMPTZ DEFAULT NOW()<br/>
+        );
+      </div>
+    </div>
+  )
+
+  if (!logs.length) return (
+    <div className="run-panel">
+      <div className="empty-state sm">
+        <History size={24} strokeWidth={1} />
+        <p>No changes logged yet</p>
+        <span>Actions on this release will appear here</span>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="run-panel" style={{ padding: 0 }}>
+      <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg3)', fontSize: 12, color: 'var(--text3)' }}>
+        {logs.length} change{logs.length !== 1 ? 's' : ''} logged
+      </div>
+      {logs.map((log, i) => {
+        const details = log.details || {}
+        let desc = ''
+        if (details.tcId) desc = `${details.tcId}${details.title ? ` — ${details.title}` : ''}${details.status ? ` → ${details.status}` : ''}`
+        else if (details.count !== undefined) desc = `${details.count} test case${details.count !== 1 ? 's' : ''}`
+        else if (details.key) desc = `${details.key}: ${details.checked ? 'checked ✓' : 'unchecked'}`
+
+        return (
+          <div key={log.id || i} style={{
+            padding: '10px 16px',
+            borderBottom: '1px solid var(--border)',
+            display: 'grid',
+            gridTemplateColumns: '150px 1fr auto',
+            alignItems: 'start',
+            gap: 12,
+            background: 'var(--bg2)',
+          }}>
+            <div style={{ fontSize: 11, color: 'var(--text4)', paddingTop: 1 }}>
+              {new Date(log.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            </div>
+            <div>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>
+                {ACTION_LABELS[log.action] || log.action}
+              </span>
+              {desc && (
+                <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 6 }}>{desc}</span>
+              )}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--accent2)', fontWeight: 500, textAlign: 'right', whiteSpace: 'nowrap' }}>
+              {log.user_name || log.user_email || '—'}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Auth View ──────────────────────────────────────────────────────────────────
+function AuthView({ onAuth }) {
+  const [mode, setMode]       = useState('login')
+  const [email, setEmail]     = useState('')
+  const [password, setPassword] = useState('')
+  const [name, setName]       = useState('')
+  const [error, setError]     = useState('')
+  const [success, setSuccess] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setError(''); setLoading(true); setSuccess('')
+
+    if (mode === 'signup') {
+      const { data, error: err } = await supabase.auth.signUp({
+        email, password,
+        options: { data: { full_name: name } },
+      })
+      if (err) setError(err.message)
+      else if (data.user && !data.session)
+        setSuccess('Account created! Check your email to confirm your address, then sign in.')
+      else if (data.session) onAuth(data.user)
+    } else {
+      const { data, error: err } = await supabase.auth.signInWithPassword({ email, password })
+      if (err) setError(err.message)
+      else onAuth(data.user)
+    }
+    setLoading(false)
+  }
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      minHeight: '100vh', background: '#111827',
+    }}>
+      <div style={{
+        background: '#1F2937', borderRadius: 16, padding: '40px 36px',
+        width: '100%', maxWidth: 400,
+        boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+        border: '1px solid rgba(255,255,255,0.07)',
+      }}>
+        {/* Logo */}
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+          <div style={{
+            width: 52, height: 52, borderRadius: 13,
+            background: 'linear-gradient(135deg, #F59E0B, #D97706)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            margin: '0 auto 14px', boxShadow: '0 4px 20px rgba(245,158,11,0.45)',
+          }}>
+            <Radio size={24} color="#111827" strokeWidth={2.5} />
+          </div>
+          <div style={{ fontSize: 24, fontWeight: 800, fontFamily: 'var(--font-head)', color: '#F9FAFB', letterSpacing: '-0.02em' }}>
+            Beacon
+          </div>
+          <div style={{ fontSize: 13, color: '#6B7280', marginTop: 3 }}>Datman QA Platform</div>
+        </div>
+
+        {/* Mode switcher */}
+        <div style={{ display: 'flex', background: 'rgba(0,0,0,0.3)', borderRadius: 9, padding: 4, marginBottom: 28, gap: 2 }}>
+          {[['login', 'Sign In'], ['signup', 'Create Account']].map(([m, label]) => (
+            <button key={m}
+              onClick={() => { setMode(m); setError(''); setSuccess('') }}
+              style={{
+                flex: 1, padding: '8px 0', borderRadius: 6, fontSize: 13, fontWeight: 600,
+                background: mode === m ? '#374151' : 'transparent',
+                color: mode === m ? '#F9FAFB' : '#6B7280',
+                border: 'none', cursor: 'pointer', transition: 'all 0.15s',
+              }}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {mode === 'signup' && (
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#9CA3AF', marginBottom: 6, display: 'block' }}>Full Name</label>
+              <input
+                value={name} onChange={e => setName(e.target.value)}
+                placeholder="e.g. Rohit"
+                style={{ background: '#374151', border: '1px solid rgba(255,255,255,0.1)', color: '#F9FAFB', borderRadius: 8, padding: '10px 12px', fontSize: 14, outline: 'none', width: '100%' }}
+              />
+            </div>
+          )}
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: '#9CA3AF', marginBottom: 6, display: 'block' }}>Email</label>
+            <input
+              type="email" value={email} onChange={e => setEmail(e.target.value)}
+              placeholder="you@datman.je" required
+              style={{ background: '#374151', border: '1px solid rgba(255,255,255,0.1)', color: '#F9FAFB', borderRadius: 8, padding: '10px 12px', fontSize: 14, outline: 'none', width: '100%' }}
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: '#9CA3AF', marginBottom: 6, display: 'block' }}>Password</label>
+            <input
+              type="password" value={password} onChange={e => setPassword(e.target.value)}
+              placeholder="••••••••" required minLength={6}
+              style={{ background: '#374151', border: '1px solid rgba(255,255,255,0.1)', color: '#F9FAFB', borderRadius: 8, padding: '10px 12px', fontSize: 14, outline: 'none', width: '100%' }}
+            />
+            {mode === 'signup' && (
+              <span style={{ fontSize: 11, color: '#6B7280', marginTop: 5, display: 'block' }}>Minimum 6 characters</span>
+            )}
+          </div>
+
+          {error && (
+            <div style={{
+              display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px 12px',
+              background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+              borderRadius: 8, fontSize: 12, color: '#FCA5A5',
+            }}>
+              <XCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} /> {error}
+            </div>
+          )}
+          {success && (
+            <div style={{
+              display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px 12px',
+              background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)',
+              borderRadius: 8, fontSize: 12, color: '#6EE7B7',
+            }}>
+              <CheckCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} /> {success}
+            </div>
+          )}
+
+          <button type="submit" disabled={loading || !!success}
+            style={{
+              marginTop: 4, padding: '12px', borderRadius: 8, fontSize: 14, fontWeight: 600,
+              background: loading || success ? '#374151' : '#4F46E5',
+              color: loading || success ? '#9CA3AF' : '#fff',
+              border: 'none', cursor: loading || success ? 'not-allowed' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              transition: 'background 0.15s',
+            }}>
+            {loading
+              ? <><RefreshCw size={14} className="spin" /> {mode === 'login' ? 'Signing in…' : 'Creating account…'}</>
+              : mode === 'login' ? 'Sign In' : 'Create Account'}
+          </button>
+        </form>
+      </div>
     </div>
   )
 }
