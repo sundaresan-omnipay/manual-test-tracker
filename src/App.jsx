@@ -582,14 +582,14 @@ export default function App() {
 
   if (dbLoading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'var(--sb-bg)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#0F172A' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ width: 48, height: 48, borderRadius: 14, background: 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', boxShadow: '0 0 24px rgba(245,158,11,0.5), 0 4px 12px rgba(0,0,0,0.3)' }}>
-            <Radio size={22} color="#1A1033" strokeWidth={2.5} />
+          <div style={{ width: 44, height: 44, borderRadius: 11, background: 'linear-gradient(135deg, #F59E0B, #D97706)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', boxShadow: '0 4px 16px rgba(245,158,11,0.45)' }}>
+            <Radio size={20} color="#0F172A" strokeWidth={2.5} />
           </div>
-          <p style={{ fontSize: '15px', fontWeight: 800, fontFamily: 'var(--font-head)', marginBottom: 6, letterSpacing: '0.18em', textTransform: 'uppercase', background: 'linear-gradient(135deg, #F59E0B 0%, #FDE68A 45%, #EDE8FF 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', filter: 'drop-shadow(0 0 10px rgba(245,158,11,0.55))' }}>Beacon</p>
-          <p style={{ fontSize: '12px', color: '#4B3870', display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center', fontFamily: 'var(--font-body)' }}>
-            <RefreshCw size={12} className="spin" style={{ color: '#8B5CF6' }} /> Loading…
+          <p style={{ fontSize: '13px', fontWeight: 800, fontFamily: 'var(--font-head)', marginBottom: 8, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#F8FAFC' }}>Beacon</p>
+          <p style={{ fontSize: '12px', color: '#64748B', display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center' }}>
+            <RefreshCw size={12} className="spin" /> Loading…
           </p>
         </div>
       </div>
