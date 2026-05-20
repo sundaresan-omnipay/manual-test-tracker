@@ -283,10 +283,13 @@ export default function App() {
 
   const ghHeaders = (token) => token ? { Authorization: `token ${token}` } : {}
 
-  const fetchOneFile = async (rawUrl, label, token) => {
-    const res = await fetch(rawUrl, { headers: ghHeaders(token) })
+  const fetchOneFile = async (owner, repo, branch, filePath, label, token) => {
+    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`
+    const res = await fetch(apiUrl, { headers: ghHeaders(token) })
     if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${label}`)
-    const rows = await parseCsvText(await res.text())
+    const data = await res.json()
+    const text = atob(data.content.replace(/\n/g, ''))
+    const rows = await parseCsvText(text)
     return applyRows(rows, label)
   }
 
@@ -325,7 +328,7 @@ export default function App() {
             for (let ci = 0; ci < files.length; ci++) {
               const f = files[ci]
               setLoadProgress(`${folder}/${f.name} (${ci + 1}/${files.length})`)
-              const { filtered, all, source } = await fetchOneFile(f.download_url, `${folder}/${f.name}`, token)
+              const { filtered, all, source } = await fetchOneFile(owner, repo, branch, f.path, `${folder}/${f.name}`, token)
               allTcs.push(...filtered)
               allTcsAll.push(...all)
               sources.push(source)
@@ -337,8 +340,7 @@ export default function App() {
       } else {
         if (!cfg.file) throw new Error('Enter a CSV file path')
         setLoadProgress(`Fetching ${cfg.file}…`)
-        const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${cfg.file}`
-        const { filtered, all, source } = await fetchOneFile(rawUrl, cfg.file, token)
+        const { filtered, all, source } = await fetchOneFile(owner, repo, branch, cfg.file, cfg.file, token)
         allTcs.push(...filtered)
         allTcsAll.push(...all)
         sources.push(source)
