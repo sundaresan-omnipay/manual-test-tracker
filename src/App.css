@@ -441,31 +441,36 @@
 /* ══════════════════════════════════════════
    RELEASES LIST (table-style rows)
 ══════════════════════════════════════════ */
-.releases-table {
-  background: var(--bg2);
+/* Table scroll wrapper */
+.releases-table-wrap {
+  overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: var(--card-radius);
-  overflow: hidden;
   box-shadow: var(--shadow-xs);
+}
+.releases-table {
+  background: var(--bg2);
+  min-width: 860px;
+  width: 100%;
 }
 .releases-table-header {
   display: grid;
-  grid-template-columns: 1.8fr 110px 120px 160px 180px 120px 44px;
+  grid-template-columns: minmax(200px, 2fr) 100px 130px 150px 140px 100px 52px;
   gap: 0;
-  padding: 10px 18px;
+  padding: 9px 16px;
   border-bottom: 1px solid var(--border);
   background: var(--bg3);
 }
 .releases-table-header span {
-  font-size: 11.5px; font-weight: 600; color: var(--text3);
-  text-transform: uppercase; letter-spacing: 0.05em;
+  font-size: 11px; font-weight: 700; color: var(--text3);
+  text-transform: uppercase; letter-spacing: 0.06em;
 }
 
 .release-row {
   display: grid;
-  grid-template-columns: 1.8fr 110px 120px 160px 180px 120px 44px;
+  grid-template-columns: minmax(200px, 2fr) 100px 130px 150px 140px 100px 52px;
   gap: 0;
-  padding: 13px 18px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--border);
   align-items: center;
   cursor: pointer;
@@ -475,10 +480,14 @@
 .release-row:hover { background: var(--bg3); }
 
 .release-row-name {
-  display: flex; flex-direction: column; gap: 3px;
+  display: flex; flex-direction: column; gap: 3px; min-width: 0;
 }
 .release-row-title {
-  font-size: 14px; font-weight: 600; color: var(--text);
+  font-size: 13.5px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.release-row-meta {
+  display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; min-width: 0;
 }
 .release-row-desc {
   font-size: 12px; color: var(--text3);
@@ -486,9 +495,13 @@
   max-width: 280px;
 }
 
-.progress-bar { height: 5px; background: var(--bg4); border-radius: 99px; overflow: hidden; flex: 1; min-width: 60px; }
+.progress-bar { height: 5px; background: var(--bg4); border-radius: 99px; overflow: hidden; min-width: 60px; width: 100%; }
 .progress-fill { height: 100%; background: var(--green); border-radius: 99px; transition: width 0.5s ease; }
-.progress-label { font-size: 11.5px; color: var(--text3); white-space: nowrap; margin-top: 2px; }
+.progress-label { font-size: 11px; color: var(--text3); white-space: nowrap; }
+
+.release-row-progress { display: flex; flex-direction: column; gap: 4px; padding-right: 8px; }
+.release-row-stats { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.release-row-actions { display: flex; gap: 2px; justify-content: flex-end; align-items: center; }
 
 /* ══════════════════════════════════════════
    STAT BADGES / PILLS
@@ -838,6 +851,156 @@
 .checklist-item-label { flex: 1; font-size: 13.5px; color: var(--text); font-weight: 500; transition: color 0.13s; }
 .checklist-item.checked .checklist-item-label { color: var(--text3); text-decoration: line-through; }
 .checklist-tick { font-size: 14px; color: var(--green); font-weight: 700; }
+
+/* Checklist sections */
+.checklist-section { border-bottom: 1px solid var(--border); }
+.checklist-section:last-child { border-bottom: none; }
+.checklist-section-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 18px; background: var(--bg3); border-bottom: 1px solid var(--border);
+  border-left: 3px solid transparent;
+}
+.checklist-section-title { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.checklist-section-count { font-size: 11px; font-weight: 700; }
+.checklist-section .checklist-items { padding: 0; }
+.checklist-section .checklist-item:last-child { border-bottom: none; }
+
+/* Tristate checklist items */
+.checklist-item.tristate {
+  display: flex; flex-direction: column; align-items: stretch; gap: 8px;
+  padding: 12px 18px; border-bottom: 1px solid var(--border); cursor: default;
+  transition: background 0.10s;
+}
+.checklist-item.tristate:hover { background: var(--bg3); }
+.checklist-item.tristate.ts-done { background: var(--green-bg); }
+.checklist-item.tristate.ts-skipped { background: var(--yellow-bg); }
+.checklist-tristate-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.checklist-status-btns { display: flex; gap: 6px; flex-shrink: 0; }
+.checklist-ts-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11.5px; font-weight: 600; padding: 4px 10px;
+  border-radius: 6px; border: 1px solid var(--border); background: var(--bg2);
+  color: var(--text3); cursor: pointer; transition: all 0.13s; white-space: nowrap;
+}
+.checklist-ts-btn:hover { background: var(--bg3); border-color: var(--border2); color: var(--text); }
+.checklist-ts-btn.done.active  { background: var(--green-bg); border-color: var(--green-border); color: var(--green); }
+.checklist-ts-btn.skip.active  { background: var(--yellow-bg); border-color: var(--yellow-border); color: var(--yellow); }
+
+/* Single + multi link rows */
+.checklist-link-row {
+  display: flex; align-items: center; gap: 8px;
+}
+.checklist-multilink { display: flex; flex-direction: column; gap: 6px; }
+.checklist-link-input {
+  flex: 1; font-size: 12px; padding: 5px 10px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg2); color: var(--text2);
+  min-width: 0;
+}
+.checklist-link-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,70,229,0.10); }
+.checklist-link-open {
+  font-size: 11.5px; font-weight: 600; color: var(--accent); text-decoration: none;
+  padding: 4px 10px; border-radius: 6px; border: 1px solid var(--accent-border);
+  background: var(--accent-bg); white-space: nowrap; flex-shrink: 0; transition: background 0.12s;
+}
+.checklist-link-open:hover { background: var(--accent-border); }
+.checklist-link-remove {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 5px; border: 1px solid var(--red-border);
+  background: var(--red-bg); color: var(--red); cursor: pointer; flex-shrink: 0;
+  transition: all 0.12s;
+}
+.checklist-link-remove:hover { background: var(--red); color: #fff; }
+.checklist-add-link {
+  display: inline-flex; align-items: center; gap: 4px; align-self: flex-start;
+  font-size: 11.5px; font-weight: 600; color: var(--accent); padding: 4px 10px;
+  border-radius: 6px; border: 1px dashed var(--accent-border); background: var(--accent-bg);
+  cursor: pointer; transition: all 0.13s; margin-left: 20px;
+}
+.checklist-add-link:hover { background: var(--accent-border); }
+
+/* ══════════════════════════════════════════
+   COPY LINK TOOLTIP
+══════════════════════════════════════════ */
+.copy-link-wrap {
+  position: relative; display: inline-flex; align-items: center;
+}
+.copy-link-tooltip {
+  position: absolute; bottom: calc(100% + 7px); left: 50%; transform: translateX(-50%);
+  background: #1F2937; color: #F9FAFB; font-size: 11.5px; font-weight: 500;
+  padding: 5px 10px; border-radius: 6px; white-space: nowrap; pointer-events: none;
+  opacity: 0; transition: opacity 0.15s; z-index: 100;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+}
+.copy-link-tooltip::after {
+  content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+  border: 5px solid transparent; border-top-color: #1F2937;
+}
+.copy-link-wrap:hover .copy-link-tooltip { opacity: 1; }
+.btn-copy-link { white-space: nowrap; }
+.btn-copy-link.copied { background: var(--green-bg); color: var(--green); border-color: var(--green-border); }
+
+/* ══════════════════════════════════════════
+   CHANGELOG PANEL
+══════════════════════════════════════════ */
+.changelog-user-filter {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--bg2);
+}
+.changelog-filter-label { font-size: 11px; color: var(--text3); font-weight: 600; white-space: nowrap; }
+.changelog-user-chip { display: inline-flex; align-items: center; gap: 5px; }
+.cl-avatar-xs {
+  width: 16px; height: 16px; border-radius: 50%; display: inline-flex;
+  align-items: center; justify-content: center; font-size: 8px; font-weight: 700; color: #fff;
+  flex-shrink: 0;
+}
+.changelog-row {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 11px 16px; border-bottom: 1px solid var(--border); background: var(--bg2);
+  transition: background 0.10s;
+}
+.changelog-row:hover { background: var(--bg3); }
+.cl-avatar {
+  width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; color: #fff; margin-top: 1px;
+}
+.cl-body { flex: 1; min-width: 0; }
+.cl-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; flex-wrap: wrap; }
+.cl-username { font-size: 12px; font-weight: 700; }
+.cl-time { font-size: 11px; color: var(--text4); }
+.cl-action { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.cl-action-label { font-size: 12px; font-weight: 500; color: var(--text); }
+.cl-action-desc { font-size: 11px; color: var(--text3); }
+
+.changelog-empty {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 8px; padding: 3rem 2rem; text-align: center;
+}
+.changelog-empty p { font-size: 15px; color: var(--text2); font-weight: 600; }
+.changelog-empty span { font-size: 12.5px; color: var(--text3); max-width: 360px; line-height: 1.6; }
+
+/* RLS error banner */
+.changelog-rls-banner {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 14px 16px; background: #FFF7ED;
+  border-bottom: 1px solid #FED7AA; color: #92400E;
+}
+.changelog-rls-top {
+  display: flex; align-items: flex-start; gap: 10px; font-size: 13px;
+}
+.changelog-rls-top strong { display: block; font-size: 13px; margin-bottom: 3px; }
+.changelog-rls-top p { font-size: 12px; color: #78350F; margin: 0; line-height: 1.5; }
+.changelog-rls-sql {
+  font-size: 11.5px; font-family: 'Fira Code', 'JetBrains Mono', monospace;
+  background: #1F2937; color: #E2E8F0; padding: 12px 14px;
+  border-radius: 6px; overflow-x: auto; line-height: 1.8; white-space: pre;
+  margin: 0;
+}
+.btn-ghost-sm {
+  padding: 5px 10px; font-size: 12px; align-self: flex-start;
+}
 
 /* ══════════════════════════════════════════
    COPY / EXPORT BUTTONS
