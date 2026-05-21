@@ -141,6 +141,7 @@ export default function App() {
   const [user, setUser]                       = useState(null)
   const [authLoading, setAuthLoading]         = useState(true)
   const [changelogRlsError, setChangelogRlsError] = useState(false)
+  const guestReleaseId = new URLSearchParams(window.location.search).get('release')
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -628,6 +629,7 @@ export default function App() {
   }
 
   if (!user) {
+    if (guestReleaseId) return <GuestReleaseView releaseId={guestReleaseId} onSignIn={() => window.location.href = window.location.pathname} />
     return <AuthView onAuth={setUser} />
   }
 
@@ -2903,6 +2905,320 @@ CREATE POLICY "allow_all_authenticated" ON beacon_changelog
           </div>
         )
       })}
+    </div>
+  )
+}
+
+// ── Guest Release View ─────────────────────────────────────────────────────────
+function GuestReleaseView({ releaseId, onSignIn }) {
+  const [release, setRelease]   = useState(null)
+  const [loading, setLoading]   = useState(true)
+  const [notFound, setNotFound] = useState(false)
+  const [tab, setTab]           = useState('run')
+  const [expandedId, setExpandedId] = useState(null)
+
+  useEffect(() => {
+    const fetch = async () => {
+      const { data: rel, error: rErr } = await supabase
+        .from('beacon_releases').select('*').eq('id', releaseId).single()
+      if (rErr || !rel) { setNotFound(true); setLoading(false); return }
+
+      const { data: tcs } = await supabase
+        .from('beacon_test_cases').select('*').eq('release_id', releaseId)
+
+      setRelease({
+        id: rel.id,
+        name: rel.name,
+        jiraTicket: rel.jira_ticket || '',
+        jiraUrl: rel.jira_url || '',
+        description: rel.description || '',
+        qaResource: rel.qa_resource || '',
+        reviewer: rel.reviewer || '',
+        releaseDate: rel.release_date || '',
+        environment: rel.environment || 'Staging',
+        checklist: rel.checklist || {},
+        createdAt: rel.created_at,
+        testCases: (tcs || []).map(tc => ({
+          id: tc.tc_id, title: tc.title, module: tc.module,
+          submodule: tc.submodule, priority: tc.priority,
+          labels: tc.labels, status: tc.status, notes: tc.notes,
+          precondition: tc.precondition, testSteps: tc.test_steps,
+          expectedResult: tc.expected_result, updatedAt: tc.updated_at,
+        })),
+      })
+      setLoading(false)
+    }
+    fetch()
+  }, [releaseId])
+
+  if (loading) return (
+    <div className="guest-loading">
+      <div className="guest-beacon-logo">
+        <Radio size={20} color="#111827" strokeWidth={2.5} />
+      </div>
+      <p style={{ color: '#9CA3AF', fontSize: 13, marginTop: 12 }}>Loading release…</p>
+    </div>
+  )
+
+  if (notFound) return (
+    <div className="guest-loading">
+      <div className="guest-beacon-logo">
+        <Radio size={20} color="#111827" strokeWidth={2.5} />
+      </div>
+      <p style={{ color: '#F9FAFB', fontSize: 16, fontWeight: 700, marginTop: 16 }}>Release not found</p>
+      <p style={{ color: '#6B7280', fontSize: 13, marginTop: 6 }}>This link may be expired or the release doesn't exist.</p>
+      <button className="guest-signin-btn" style={{ marginTop: 20 }} onClick={onSignIn}>Sign in to Beacon</button>
+    </div>
+  )
+
+  const env     = release.environment || 'Staging'
+  const envCfg  = ENV_CONFIG[env] || ENV_CONFIG.Staging
+  const tcs     = release.testCases
+  const s       = {
+    total:   tcs.length,
+    pass:    tcs.filter(t => t.status === 'pass').length,
+    fail:    tcs.filter(t => t.status === 'fail').length,
+    skip:    tcs.filter(t => t.status === 'skip').length,
+    pending: tcs.filter(t => t.status === 'pending').length,
+  }
+  const pct     = s.total > 0 ? Math.round((s.pass / s.total) * 100) : 0
+  const ship    = getShipStatus(release, s)
+
+  // Group by module
+  const grouped = tcs.reduce((acc, tc) => {
+    const key = tc.module || 'Uncategorised'
+    if (!acc[key]) acc[key] = []
+    acc[key].push(tc)
+    return acc
+  }, {})
+
+  const checklistDone = DEFAULT_CHECKLIST.filter(item => {
+    const val = release.checklist?.[item.key]
+    if (item.tristate) return val?.status === 'done' || val?.status === 'skipped'
+    return !!val
+  }).length
+
+  return (
+    <div className="guest-shell">
+      {/* Guest banner */}
+      <div className="guest-banner">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div className="guest-beacon-badge">
+            <Radio size={13} color="#111827" strokeWidth={2.5} />
+            <span>Beacon</span>
+          </div>
+          <span className="guest-view-label">Guest view · Read only</span>
+        </div>
+        <button className="guest-signin-btn" onClick={onSignIn}>Sign in</button>
+      </div>
+
+      {/* Release header */}
+      <div className="guest-header">
+        <div className="guest-header-left">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <h1 className="guest-release-title">{release.name}</h1>
+            <span className="env-badge env-badge-lg" style={{ color: envCfg.color, background: envCfg.bg, border: `1px solid ${envCfg.border}` }}>{env}</span>
+            {ship && <span className="ship-badge ship-badge-lg" style={{ color: ship.color, background: ship.bg, border: `1px solid ${ship.border}` }}>{ship.label}</span>}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+            {release.jiraTicket && (
+              <a className="jira-badge" href={release.jiraUrl || '#'} target="_blank" rel="noreferrer">
+                <ExternalLink size={10} /> {release.jiraTicket}
+              </a>
+            )}
+            {release.qaResource && <span className="person-badge qa"><User size={10} /> QA: {release.qaResource}</span>}
+            {release.reviewer && <span className="person-badge rev"><UserCheck size={10} /> Rev: {release.reviewer}</span>}
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div className="guest-stats">
+          {Object.entries(STATUS_CONFIG).map(([k, cfg]) => {
+            const Icon = cfg.icon
+            return (
+              <div className="stat-item" key={k}>
+                <Icon size={14} color={cfg.color} />
+                <span style={{ fontWeight: 700, fontSize: 14, color: cfg.color }}>{s[k]}</span>
+                <span className="stat-lbl">{cfg.label}</span>
+              </div>
+            )
+          })}
+          <div className="stat-item">
+            <Layers size={14} color="var(--text3)" />
+            <span style={{ fontWeight: 700, fontSize: 14 }}>{s.total}</span>
+            <span className="stat-lbl">Total</span>
+          </div>
+          {s.total > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+              <span className="stats-pct">{pct}%</span>
+              <div className="mini-progress"><div className="mini-progress-fill" style={{ width: `${pct}%` }} /></div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="guest-content">
+        <div className="tabs" style={{ paddingLeft: 0 }}>
+          <button className={`tab ${tab === 'run' ? 'active' : ''}`} onClick={() => setTab('run')}>
+            Test Results {s.total > 0 && `(${s.total})`}
+          </button>
+          <button className={`tab ${tab === 'checklist' ? 'active' : ''}`} onClick={() => setTab('checklist')}>
+            Checklist {checklistDone > 0 && `(${checklistDone}/${DEFAULT_CHECKLIST.length})`}
+          </button>
+        </div>
+
+        {tab === 'run' && (
+          <div className="run-panel">
+            {s.total === 0 ? (
+              <div className="empty-state sm">
+                <Layers size={24} strokeWidth={1} />
+                <p>No test cases added yet</p>
+              </div>
+            ) : (
+              Object.entries(grouped).map(([module, cases]) => (
+                <div key={module}>
+                  <div className="run-group-header">
+                    {module}
+                    <span>{cases.length}</span>
+                  </div>
+                  {cases.map(tc => {
+                    const stCfg   = STATUS_CONFIG[tc.status] || STATUS_CONFIG.pending
+                    const Icon    = stCfg.icon
+                    const expanded = expandedId === tc.id
+                    return (
+                      <div key={tc.id} className={`run-item status-${tc.status}`}>
+                        {/* Clickable header row */}
+                        <div
+                          className="run-item-header"
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => setExpandedId(expanded ? null : tc.id)}
+                        >
+                          <div className="run-left">
+                            <Icon size={15} color={stCfg.color} />
+                            <PriorityBadge priority={tc.priority} />
+                            <span className="tc-id">{tc.id}</span>
+                            <span className="tc-title">{tc.title}</span>
+                          </div>
+                          <div className="run-right" style={{ gap: 8 }}>
+                            <span className="guest-status-pill" style={{ color: stCfg.color, background: `${stCfg.color}18`, border: `1px solid ${stCfg.color}40` }}>
+                              {stCfg.label}
+                            </span>
+                            {expanded ? <ChevronUp size={14} color="var(--text3)" /> : <ChevronDown size={14} color="var(--text3)" />}
+                          </div>
+                        </div>
+
+                        {/* Expanded detail body — read-only */}
+                        {expanded && (
+                          <div className="run-item-body">
+                            {tc.submodule && (
+                              <div className="detail-breadcrumb">
+                                <Tag size={11} /> {tc.module} › {tc.submodule}
+                              </div>
+                            )}
+                            {tc.labels && <LabelChips labels={tc.labels} />}
+
+                            {tc.precondition && (
+                              <div className="detail-section">
+                                <div className="detail-label">Preconditions</div>
+                                <div className="detail-text">{tc.precondition}</div>
+                              </div>
+                            )}
+                            {tc.testSteps && (
+                              <div className="detail-section">
+                                <div className="detail-label">Test Steps</div>
+                                <div className="detail-text">{tc.testSteps}</div>
+                              </div>
+                            )}
+                            {tc.expectedResult && (
+                              <div className="detail-section">
+                                <div className="detail-label">Expected Result</div>
+                                <div className="detail-text">{tc.expectedResult}</div>
+                              </div>
+                            )}
+                            {tc.notes && (
+                              <div className="detail-section">
+                                <div className="detail-label">Notes / Observations</div>
+                                <div className="detail-text guest-notes">{tc.notes}</div>
+                              </div>
+                            )}
+                            {tc.updatedAt && (
+                              <span className="updated-at">Last updated: {new Date(tc.updatedAt).toLocaleString()}</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {tab === 'checklist' && (
+          <div className="checklist-panel">
+            <div className="checklist-header">
+              <div>
+                <span className="checklist-title">Release Checklist</span>
+                <span className="checklist-sub">Read-only view</span>
+              </div>
+              <div className="checklist-progress-wrap">
+                <span className="checklist-count" style={{ color: checklistDone === DEFAULT_CHECKLIST.length ? 'var(--green)' : 'var(--text2)' }}>
+                  {checklistDone}/{DEFAULT_CHECKLIST.length} complete
+                </span>
+                <div className="progress-bar" style={{ width: 140, marginBottom: 0 }}>
+                  <div className="progress-fill" style={{ width: `${DEFAULT_CHECKLIST.length > 0 ? Math.round((checklistDone / DEFAULT_CHECKLIST.length) * 100) : 0}%` }} />
+                </div>
+              </div>
+            </div>
+            <div className="checklist-items">
+              {DEFAULT_CHECKLIST.map(item => {
+                const val = release.checklist?.[item.key]
+                if (item.tristate) {
+                  const status = val?.status || null
+                  const isDone = status === 'done', isSkipped = status === 'skipped'
+                  const links = val?.links || (val?.link ? [val.link] : [])
+                  return (
+                    <div key={item.key} className={`checklist-item tristate ${isDone ? 'ts-done' : isSkipped ? 'ts-skipped' : ''}`}>
+                      <div className="checklist-tristate-row">
+                        <span className="checklist-item-label" style={{ textDecoration: isDone || isSkipped ? 'line-through' : 'none', color: isDone || isSkipped ? 'var(--text3)' : 'var(--text)' }}>{item.label}</span>
+                        {status && (
+                          <span className={`checklist-ts-btn ${isDone ? 'done active' : 'skip active'}`} style={{ cursor: 'default', pointerEvents: 'none' }}>
+                            {isDone ? <><CheckCircle size={11} /> Done</> : <><SkipForward size={11} /> Skipped</>}
+                          </span>
+                        )}
+                      </div>
+                      {links.filter(Boolean).map((lnk, i) => (
+                        <div key={i} className="checklist-link-row">
+                          <ExternalLink size={12} color="var(--accent)" style={{ flexShrink: 0 }} />
+                          <a href={lnk} target="_blank" rel="noreferrer" className="guest-link">{lnk}</a>
+                          <span className="checklist-link-open" style={{ cursor: 'pointer', pointerEvents: 'auto' }}
+                            onClick={() => window.open(lnk, '_blank', 'noreferrer')}>Open ↗</span>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                }
+                const checked = !!val
+                return (
+                  <div key={item.key} className={`checklist-item ${checked ? 'checked' : ''}`} style={{ pointerEvents: 'none' }}>
+                    <input type="checkbox" checked={checked} readOnly style={{ accentColor: 'var(--green)', width: 'auto', flexShrink: 0, margin: 0 }} />
+                    <span className="checklist-item-label">{item.label}</span>
+                    {checked && <span className="checklist-tick">✓</span>}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* CTA */}
+        <div className="guest-cta">
+          <span>Want to manage test runs, update statuses, or add test cases?</span>
+          <button className="guest-signin-btn" onClick={onSignIn}>Sign in to Beacon</button>
+        </div>
+      </div>
     </div>
   )
 }
