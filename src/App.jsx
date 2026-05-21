@@ -140,6 +140,7 @@ export default function App() {
   const notesTimerRef                         = useRef({})
   const [user, setUser]                       = useState(null)
   const [authLoading, setAuthLoading]         = useState(true)
+  const [changelogRlsError, setChangelogRlsError] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -587,7 +588,10 @@ export default function App() {
       user_email: user.email,
       user_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Unknown',
     })
-    if (error) console.warn('Changelog write failed:', error.code, error.message)
+    if (error) {
+      console.warn('Changelog write failed:', error.code, error.message)
+      if (error.code === '42501') setChangelogRlsError(true)
+    }
   }
 
   const filteredTestCases = testCases.filter(tc => {
@@ -760,6 +764,7 @@ export default function App() {
             onRefresh={fetchFromGithub}
             testCasesLoaded={testCases.length > 0}
             onChecklistChange={(key, val) => updateChecklist(activeRelease.id, key, val)}
+            changelogRlsError={changelogRlsError}
           />
         )}
       </main>
@@ -1548,12 +1553,19 @@ function SettingsView({ config, onSave, onLoadFiles, loading, progress, error, t
 
 // ── Releases View ──────────────────────────────────────────────────────────────
 const DEFAULT_CHECKLIST = [
-  { key: 'smoke',       label: 'Smoke test completed' },
-  { key: 'regression',  label: 'Full regression run' },
-  { key: 'p0_resolved', label: 'P0/P1 failures resolved or accepted' },
-  { key: 'browser',     label: 'Browser compatibility verified' },
-  { key: 'qa_signoff',  label: 'QA sign-off obtained' },
-  { key: 'approved',    label: 'Reviewer approved' },
+  // ── Test execution ──
+  { key: 'smoke',       label: 'Smoke test completed',               section: 'Test Execution' },
+  { key: 'regression',  label: 'Full regression run',                section: 'Test Execution' },
+  { key: 'p0_resolved', label: 'P0/P1 failures resolved or accepted',section: 'Test Execution' },
+  { key: 'browser',     label: 'Browser compatibility verified',      section: 'Test Execution' },
+  // ── Documentation & tracking ──
+  { key: 'manual_tc_repo',   label: 'Manual test cases repo',            section: 'Documentation', hasLink: true,      tristate: true },
+  { key: 'sit_testing',      label: 'SIT testing',                        section: 'Documentation', tristate: true },
+  { key: 'reported_tickets', label: 'Reported tickets link and status',   section: 'Documentation', multiLink: true,    tristate: true },
+  { key: 'qa_design',        label: 'QA design and link',                 section: 'Documentation', hasLink: true,      tristate: true },
+  // ── Sign-off ──
+  { key: 'qa_signoff', label: 'QA sign-off obtained',  section: 'Sign-off' },
+  { key: 'approved',   label: 'Reviewer approved',      section: 'Sign-off' },
 ]
 
 const ENV_CONFIG = {
@@ -1713,11 +1725,12 @@ function ReleasesView({ releases, onNew, onOpen, onDelete, onClone, getStats, sh
               </button>
 
               {!collapsed && (
+                <div className="releases-table-wrap">
                 <div className="releases-table">
                   {/* Table header */}
                   <div className="releases-table-header">
                     <span>Release</span>
-                    <span>Environment</span>
+                    <span>Env</span>
                     <span>Status</span>
                     <span>People</span>
                     <span>Progress</span>
@@ -1734,10 +1747,8 @@ function ReleasesView({ releases, onNew, onOpen, onDelete, onClone, getStats, sh
                       <div className="release-row" key={r.id} onClick={() => onOpen(r.id)}>
                         {/* Release name + meta */}
                         <div className="release-row-name">
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                            <span className="release-row-title">{r.name}</span>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                          <span className="release-row-title" title={r.name}>{r.name}</span>
+                          <div className="release-row-meta">
                             {r.jiraTicket && (
                               <a className="jira-badge" href={r.jiraUrl || '#'} target="_blank" rel="noreferrer"
                                 onClick={e => e.stopPropagation()}>
@@ -1745,7 +1756,7 @@ function ReleasesView({ releases, onNew, onOpen, onDelete, onClone, getStats, sh
                               </a>
                             )}
                             {r.releaseDate && (
-                              <span style={{ fontSize: '11px', color: 'var(--text3)' }}>
+                              <span style={{ fontSize: '11px', color: 'var(--text4)', whiteSpace: 'nowrap' }}>
                                 {new Date(r.releaseDate + 'T00:00:00').toLocaleDateString('default', { day: 'numeric', month: 'short', year: 'numeric' })}
                               </span>
                             )}
@@ -1773,13 +1784,13 @@ function ReleasesView({ releases, onNew, onOpen, onDelete, onClone, getStats, sh
                         </div>
 
                         {/* Progress bar */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <div className="release-row-progress">
                           <div className="progress-bar"><div className="progress-fill" style={{ width: `${pct}%` }} /></div>
                           <span className="progress-label">{pct}%</span>
                         </div>
 
                         {/* Stat counts */}
-                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                        <div className="release-row-stats">
                           {s.pass > 0 && <span className="stat-badge stat-pass">{s.pass}P</span>}
                           {s.fail > 0 && <span className="stat-badge stat-fail">{s.fail}F</span>}
                           {s.skip > 0 && <span className="stat-badge stat-skip">{s.skip}S</span>}
@@ -1788,7 +1799,7 @@ function ReleasesView({ releases, onNew, onOpen, onDelete, onClone, getStats, sh
                         </div>
 
                         {/* Actions */}
-                        <div style={{ display: 'flex', gap: 2, justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
+                        <div className="release-row-actions" onClick={e => e.stopPropagation()}>
                           <button className="icon-btn" title="Copy link to release" onClick={() => {
                             const url = `${window.location.origin}${window.location.pathname}?release=${r.id}`
                             navigator.clipboard.writeText(url)
@@ -1798,6 +1809,7 @@ function ReleasesView({ releases, onNew, onOpen, onDelete, onClone, getStats, sh
                       </div>
                     )
                   })}
+                </div>
                 </div>
               )}
             </div>
@@ -1809,7 +1821,7 @@ function ReleasesView({ releases, onNew, onOpen, onDelete, onClone, getStats, sh
 }
 
 // ── Release Detail View ────────────────────────────────────────────────────────
-function ReleaseDetailView({ release, allTestCases, searchQ, setSearchQ, onToggle, onBulkToggle, onStatusChange, onNotesChange, onBack, onExport, getStats, loadingCsv, onRefresh, testCasesLoaded, onChecklistChange }) {
+function ReleaseDetailView({ release, allTestCases, searchQ, setSearchQ, onToggle, onBulkToggle, onStatusChange, onNotesChange, onBack, onExport, getStats, loadingCsv, onRefresh, testCasesLoaded, onChecklistChange, changelogRlsError }) {
   const [tab, setTab] = useState('run')
   const [copied, setCopied] = useState(false)
   const [copiedLink, setCopiedLink] = useState(false)
@@ -1824,7 +1836,12 @@ function ReleaseDetailView({ release, allTestCases, searchQ, setSearchQ, onToggl
   const ship = getShipStatus(release, s)
   const env = release.environment || 'Staging'
   const envCfg = ENV_CONFIG[env] || ENV_CONFIG.Staging
-  const checklistDone = DEFAULT_CHECKLIST.filter(item => release.checklist?.[item.key]).length
+  const checklistDone = DEFAULT_CHECKLIST.filter(item => {
+    const val = release.checklist?.[item.key]
+    if (item.tristate) return val?.status === 'done' || val?.status === 'skipped'
+    return !!val
+  }).length
+  const CHECKLIST_SECTIONS = [...new Set(DEFAULT_CHECKLIST.map(i => i.section))]
 
   function copySummary() {
     const pct = s.total > 0 ? Math.round((s.pass / s.total) * 100) : 0
@@ -1881,10 +1898,13 @@ function ReleaseDetailView({ release, allTestCases, searchQ, setSearchQ, onToggl
           </div>
         </div>
         <div className="topbar-right">
-          <button className={`btn-ghost ${copiedLink ? 'copied' : ''}`} onClick={copyLink}>
-            {copiedLink ? <CheckCircle size={13} /> : <ExternalLink size={13} />}
-            {copiedLink ? 'Link Copied!' : 'Copy Link'}
-          </button>
+          <div className="copy-link-wrap">
+            <button className={`btn-ghost btn-copy-link ${copiedLink ? 'copied' : ''}`} onClick={copyLink}>
+              {copiedLink ? <CheckCircle size={13} /> : <ExternalLink size={13} />}
+              {copiedLink ? 'Link Copied!' : 'Copy Link'}
+            </button>
+            {!copiedLink && <span className="copy-link-tooltip">Copy a direct link to this release</span>}
+          </div>
           <button className={`btn-copy ${copied ? 'copied' : ''}`} onClick={copySummary}>
             {copied ? <CheckCircle size={13} /> : <Copy size={13} />}
             {copied ? 'Copied!' : 'Copy Summary'}
@@ -1967,10 +1987,10 @@ function ReleaseDetailView({ release, allTestCases, searchQ, setSearchQ, onToggl
           <RunPanel release={release} onStatusChange={onStatusChange} onNotesChange={onNotesChange} onDelete={onToggle} />
         )}
         {tab === 'checklist' && (
-          <ChecklistPanel checklist={release.checklist || {}} onChange={onChecklistChange} done={checklistDone} total={DEFAULT_CHECKLIST.length} />
+          <ChecklistPanel checklist={release.checklist || {}} onChange={onChecklistChange} done={checklistDone} total={DEFAULT_CHECKLIST.length} sections={CHECKLIST_SECTIONS} />
         )}
         {tab === 'changelog' && (
-          <ChangelogPanel releaseId={release.id} />
+          <ChangelogPanel releaseId={release.id} rlsError={changelogRlsError} />
         )}
       </div>
     </div>
@@ -2304,14 +2324,65 @@ function PickPanel({ allTestCases, release, onToggle, onBulkToggle, testCasesLoa
 }
 
 // ── Checklist Panel ───────────────────────────────────────────────────────────
-function ChecklistPanel({ checklist, onChange, done, total }) {
+const SECTION_META = {
+  'Test Execution':  { color: '#6366F1', icon: '⚡' },
+  'Documentation':   { color: '#0EA5E9', icon: '📋' },
+  'Sign-off':        { color: '#10B981', icon: '✅' },
+}
+
+function ChecklistPanel({ checklist, onChange, done, total, sections }) {
   const allDone = done === total
+
+  const getTristateVal = (key, multiLink = false) => {
+    const v = checklist[key]
+    if (!v || typeof v === 'boolean') return { status: null, links: [''] }
+    const links = v.links || (v.link ? [v.link] : [''])
+    return { status: v.status || null, links: links.length ? links : [''] }
+  }
+
+  const setTristateStatus = (key, status, multiLink) => {
+    const cur = getTristateVal(key, multiLink)
+    onChange(key, { ...cur, status: cur.status === status ? null : status })
+  }
+
+  const setSingleLink = (key, link) => {
+    const cur = getTristateVal(key)
+    onChange(key, { ...cur, links: [link] })
+  }
+
+  const setMultiLinks = (key, links) => {
+    const cur = getTristateVal(key, true)
+    onChange(key, { ...cur, links })
+  }
+
+  const addLink = (key) => {
+    const cur = getTristateVal(key, true)
+    setMultiLinks(key, [...cur.links, ''])
+  }
+
+  const removeLink = (key, idx) => {
+    const cur = getTristateVal(key, true)
+    const next = cur.links.filter((_, i) => i !== idx)
+    setMultiLinks(key, next.length ? next : [''])
+  }
+
+  const updateLink = (key, idx, val) => {
+    const cur = getTristateVal(key, true)
+    const next = [...cur.links]
+    next[idx] = val
+    setMultiLinks(key, next)
+  }
+
+  const itemsBySection = (sec) => DEFAULT_CHECKLIST.filter(i => i.section === sec)
+  const sectionList    = sections || [...new Set(DEFAULT_CHECKLIST.map(i => i.section))]
+
   return (
     <div className="checklist-panel">
+      {/* Header */}
       <div className="checklist-header">
         <div>
-          <span className="checklist-title">Pre-Release Gates</span>
-          <span className="checklist-sub">Sign off each gate before marking the release ready</span>
+          <span className="checklist-title">Release Checklist</span>
+          <span className="checklist-sub">Complete all gates before shipping</span>
         </div>
         <div className="checklist-progress-wrap">
           <span className="checklist-count" style={{ color: allDone ? 'var(--green)' : 'var(--text2)' }}>
@@ -2322,23 +2393,122 @@ function ChecklistPanel({ checklist, onChange, done, total }) {
           </div>
         </div>
       </div>
-      <div className="checklist-items">
-        {DEFAULT_CHECKLIST.map(item => {
-          const checked = !!checklist[item.key]
-          return (
-            <label key={item.key} className={`checklist-item ${checked ? 'checked' : ''}`}>
-              <input
-                type="checkbox"
-                checked={checked}
-                onChange={e => onChange(item.key, e.target.checked)}
-                style={{ accentColor: 'var(--green)', width: 'auto', flexShrink: 0, margin: 0 }}
-              />
-              <span className="checklist-item-label">{item.label}</span>
-              {checked && <span className="checklist-tick">✓</span>}
-            </label>
-          )
-        })}
-      </div>
+
+      {/* Sectioned items */}
+      {sectionList.map(sec => {
+        const meta  = SECTION_META[sec] || { color: 'var(--text3)', icon: '·' }
+        const items = itemsBySection(sec)
+        const secDone = items.filter(item => {
+          const val = checklist[item.key]
+          if (item.tristate) return val?.status === 'done' || val?.status === 'skipped'
+          return !!val
+        }).length
+
+        return (
+          <div key={sec} className="checklist-section">
+            <div className="checklist-section-header" style={{ borderLeftColor: meta.color }}>
+              <span className="checklist-section-title" style={{ color: meta.color }}>
+                {meta.icon} {sec}
+              </span>
+              <span className="checklist-section-count" style={{ color: secDone === items.length ? meta.color : 'var(--text4)' }}>
+                {secDone}/{items.length}
+              </span>
+            </div>
+
+            <div className="checklist-items">
+              {items.map(item => {
+                if (item.tristate) {
+                  const val    = getTristateVal(item.key, item.multiLink)
+                  const status = val.status
+                  const isDone    = status === 'done'
+                  const isSkipped = status === 'skipped'
+
+                  return (
+                    <div key={item.key} className={`checklist-item tristate ${isDone ? 'ts-done' : isSkipped ? 'ts-skipped' : ''}`}>
+                      <div className="checklist-tristate-row">
+                        <span className="checklist-item-label" style={{
+                          textDecoration: isDone || isSkipped ? 'line-through' : 'none',
+                          color: isDone || isSkipped ? 'var(--text3)' : 'var(--text)',
+                        }}>
+                          {item.label}
+                        </span>
+                        <div className="checklist-status-btns">
+                          <button className={`checklist-ts-btn done ${isDone ? 'active' : ''}`}
+                            onClick={() => setTristateStatus(item.key, 'done', item.multiLink)}>
+                            <CheckCircle size={11} /> Done
+                          </button>
+                          <button className={`checklist-ts-btn skip ${isSkipped ? 'active' : ''}`}
+                            onClick={() => setTristateStatus(item.key, 'skipped', item.multiLink)}>
+                            <SkipForward size={11} /> Skipped
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Multi-link (reported tickets) */}
+                      {item.multiLink && (
+                        <div className="checklist-multilink">
+                          {val.links.map((lnk, idx) => (
+                            <div key={idx} className="checklist-link-row">
+                              <ExternalLink size={12} color="var(--text4)" style={{ flexShrink: 0 }} />
+                              <input
+                                type="url"
+                                className="checklist-link-input"
+                                placeholder={`Ticket link ${idx + 1}…`}
+                                value={lnk}
+                                onChange={e => updateLink(item.key, idx, e.target.value)}
+                              />
+                              {lnk && <a href={lnk} target="_blank" rel="noreferrer" className="checklist-link-open">Open</a>}
+                              {val.links.length > 1 && (
+                                <button className="checklist-link-remove" onClick={() => removeLink(item.key, idx)} title="Remove">
+                                  <X size={12} />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                          <button className="checklist-add-link" onClick={() => addLink(item.key)}>
+                            <Plus size={11} /> Add ticket link
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Single link */}
+                      {item.hasLink && !item.multiLink && (
+                        <div className="checklist-link-row">
+                          <ExternalLink size={12} color="var(--text4)" style={{ flexShrink: 0 }} />
+                          <input
+                            type="url"
+                            className="checklist-link-input"
+                            placeholder="Paste link or repo URL…"
+                            value={val.links[0] || ''}
+                            onChange={e => setSingleLink(item.key, e.target.value)}
+                          />
+                          {val.links[0] && (
+                            <a href={val.links[0]} target="_blank" rel="noreferrer" className="checklist-link-open">Open</a>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                }
+
+                const checked = !!checklist[item.key]
+                return (
+                  <label key={item.key} className={`checklist-item ${checked ? 'checked' : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={e => onChange(item.key, e.target.checked)}
+                      style={{ accentColor: 'var(--green)', width: 'auto', flexShrink: 0, margin: 0 }}
+                    />
+                    <span className="checklist-item-label">{item.label}</span>
+                    {checked && <span className="checklist-tick">✓</span>}
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -2524,37 +2694,65 @@ function RunPanel({ release, onStatusChange, onNotesChange, onDelete }) {
 }
 
 // ── Change Log Panel ───────────────────────────────────────────────────────────
-function ChangelogPanel({ releaseId }) {
-  const [logs, setLogs]       = useState([])
-  const [loading, setLoading] = useState(true)
-  const [setupError, setSetupError] = useState(false)
+const AVATAR_COLORS = ['#6366F1', '#10B981', '#F59E0B', '#3B82F6', '#EF4444', '#8B5CF6', '#14B8A6', '#F97316']
 
-  useEffect(() => {
+function userAvatar(name) {
+  return (name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+}
+
+function ChangelogPanel({ releaseId, rlsError }) {
+  const [logs, setLogs]             = useState([])
+  const [loading, setLoading]       = useState(true)
+  const [setupError, setSetupError] = useState(false)
+  const [writeError, setWriteError] = useState(null)
+  const [filterUser, setFilterUser] = useState('all')
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  const fetchLogs = () => {
+    setLoading(true)
+    setWriteError(null)
     supabase
       .from('beacon_changelog')
       .select('*')
       .eq('release_id', releaseId)
       .order('created_at', { ascending: false })
-      .limit(100)
+      .limit(200)
       .then(({ data, error }) => {
         if (error) {
           if (error.code === '42P01') setSetupError(true)
-          else console.error(error)
+          else setWriteError(`Read error: ${error.message}`)
         } else {
           setLogs(data || [])
         }
         setLoading(false)
       })
-  }, [releaseId])
+  }
+
+  useEffect(() => { fetchLogs() }, [releaseId, refreshKey])
 
   const ACTION_LABELS = {
-    status_change:   'Status changed',
-    add_tc:          'Test case added',
-    remove_tc:       'Test case removed',
-    bulk_add:        'Bulk added test cases',
-    bulk_remove:     'Bulk removed test cases',
-    checklist_change:'Checklist updated',
+    status_change:    'Status changed',
+    add_tc:           'Test case added',
+    remove_tc:        'Test case removed',
+    bulk_add:         'Bulk added test cases',
+    bulk_remove:      'Bulk removed test cases',
+    checklist_change: 'Checklist updated',
   }
+
+  // Build unique user list with stable colour mapping
+  const userColorMap = {}
+  const seenUsers = []
+  logs.forEach(l => {
+    const name = l.user_name || l.user_email?.split('@')[0] || '—'
+    if (!userColorMap[name]) {
+      userColorMap[name] = AVATAR_COLORS[seenUsers.length % AVATAR_COLORS.length]
+      seenUsers.push({ name, email: l.user_email })
+    }
+  })
+
+  const filtered = filterUser === 'all' ? logs : logs.filter(l =>
+    (l.user_name || l.user_email?.split('@')[0] || '—') === filterUser
+  )
 
   if (loading) return (
     <div className="run-panel">
@@ -2565,70 +2763,142 @@ function ChangelogPanel({ releaseId }) {
   )
 
   if (setupError) return (
-    <div className="run-panel">
-      <div className="warn-box" style={{ marginBottom: 16 }}>
+    <div className="run-panel" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="warn-box">
         <AlertCircle size={13} />
-        The <strong>beacon_changelog</strong> table doesn't exist yet. Run this SQL in your Supabase dashboard:
+        The <strong>beacon_changelog</strong> table is missing or inaccessible. Run this SQL in Supabase → SQL Editor:
       </div>
-      <div className="code-block" style={{ fontSize: 12, lineHeight: 1.8 }}>
+      <div className="code-block" style={{ fontSize: 11.5, lineHeight: 1.9 }}>
         CREATE TABLE IF NOT EXISTS beacon_changelog (<br/>
         &nbsp;&nbsp;id BIGSERIAL PRIMARY KEY,<br/>
         &nbsp;&nbsp;release_id TEXT NOT NULL,<br/>
         &nbsp;&nbsp;action TEXT NOT NULL,<br/>
-        &nbsp;&nbsp;details JSONB DEFAULT {"'{}'"} ,<br/>
+        &nbsp;&nbsp;details JSONB DEFAULT {'\'{}\''},<br/>
         &nbsp;&nbsp;user_email TEXT,<br/>
         &nbsp;&nbsp;user_name TEXT,<br/>
         &nbsp;&nbsp;created_at TIMESTAMPTZ DEFAULT NOW()<br/>
-        );
+        );<br/>
+        <br/>
+        ALTER TABLE beacon_changelog ENABLE ROW LEVEL SECURITY;<br/>
+        <br/>
+        CREATE POLICY "allow_all_authenticated" ON beacon_changelog<br/>
+        &nbsp;&nbsp;FOR ALL USING (auth.role() = 'authenticated')<br/>
+        &nbsp;&nbsp;WITH CHECK (auth.role() = 'authenticated');
       </div>
+      <button className="btn-ghost" style={{ alignSelf: 'flex-start' }} onClick={() => { setSetupError(false); setRefreshKey(k => k + 1) }}>
+        <RefreshCw size={13} /> Retry
+      </button>
+    </div>
+  )
+
+  if (writeError) return (
+    <div className="run-panel" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="error-box"><AlertCircle size={13} /> {writeError}</div>
+      <button className="btn-ghost" style={{ alignSelf: 'flex-start' }} onClick={() => setRefreshKey(k => k + 1)}>
+        <RefreshCw size={13} /> Retry
+      </button>
     </div>
   )
 
   if (!logs.length) return (
     <div className="run-panel">
-      <div className="empty-state sm">
-        <History size={24} strokeWidth={1} />
+      <div className="changelog-empty">
+        <History size={28} strokeWidth={1.5} color="var(--text4)" />
         <p>No changes logged yet</p>
-        <span>Actions on this release will appear here</span>
+        <span>Test status updates, checklist changes, and test case additions will appear here going forward.</span>
+        <button className="btn-ghost" style={{ marginTop: 4 }} onClick={() => setRefreshKey(k => k + 1)}>
+          <RefreshCw size={13} /> Refresh
+        </button>
       </div>
     </div>
   )
 
+  const RLS_SQL = `-- Run in Supabase → SQL Editor
+ALTER TABLE beacon_changelog ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "allow_all_authenticated" ON beacon_changelog
+  FOR ALL
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');`
+
   return (
     <div className="run-panel" style={{ padding: 0 }}>
-      <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg3)', fontSize: 12, color: 'var(--text3)' }}>
-        {logs.length} change{logs.length !== 1 ? 's' : ''} logged
+      {/* RLS write error banner */}
+      {rlsError && (
+        <div className="changelog-rls-banner">
+          <div className="changelog-rls-top">
+            <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+            <div>
+              <strong>Changelog writes are blocked (RLS 42501)</strong>
+              <p>Your Supabase table exists but the INSERT policy is missing. Run the SQL below in Supabase → SQL Editor, then refresh:</p>
+            </div>
+          </div>
+          <pre className="changelog-rls-sql">{RLS_SQL}</pre>
+          <button className="btn-ghost btn-ghost-sm" onClick={() => navigator.clipboard.writeText(RLS_SQL)}>
+            <Copy size={11} /> Copy SQL
+          </button>
+        </div>
+      )}
+
+      {/* User filter */}
+      {seenUsers.length > 1 && (
+        <div className="changelog-user-filter">
+          <span className="changelog-filter-label">Filter by user:</span>
+          <button
+            className={`filter-chip ${filterUser === 'all' ? 'active' : ''}`}
+            onClick={() => setFilterUser('all')}
+          >
+            All ({logs.length})
+          </button>
+          {seenUsers.map(u => {
+            const count = logs.filter(l => (l.user_name || l.user_email?.split('@')[0] || '—') === u.name).length
+            const color = userColorMap[u.name]
+            const isActive = filterUser === u.name
+            return (
+              <button
+                key={u.name}
+                className={`filter-chip changelog-user-chip ${isActive ? 'active' : ''}`}
+                style={isActive ? { borderColor: color, color, background: `${color}1a` } : {}}
+                onClick={() => setFilterUser(p => p === u.name ? 'all' : u.name)}
+              >
+                <span className="cl-avatar-xs" style={{ background: color }}>{userAvatar(u.name)}</span>
+                {u.name} ({count})
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      <div style={{ padding: '9px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg3)', fontSize: 12, color: 'var(--text3)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span>{filtered.length} change{filtered.length !== 1 ? 's' : ''}{filterUser !== 'all' ? ` by ${filterUser}` : ' logged'}</span>
+        <button className="icon-btn" onClick={() => setRefreshKey(k => k + 1)} title="Refresh"><RefreshCw size={12} /></button>
       </div>
-      {logs.map((log, i) => {
-        const details = log.details || {}
+
+      {filtered.map((log, i) => {
+        const userName  = log.user_name || log.user_email?.split('@')[0] || '—'
+        const avatarCol = userColorMap[userName] || '#6B7280'
+        const details   = log.details || {}
         let desc = ''
-        if (details.tcId) desc = `${details.tcId}${details.title ? ` — ${details.title}` : ''}${details.status ? ` → ${details.status}` : ''}`
+        if (details.tcId)             desc = `${details.tcId}${details.title ? ` — ${details.title}` : ''}${details.status ? ` → ${details.status}` : ''}`
         else if (details.count !== undefined) desc = `${details.count} test case${details.count !== 1 ? 's' : ''}`
-        else if (details.key) desc = `${details.key}: ${details.checked ? 'checked ✓' : 'unchecked'}`
+        else if (details.key)         desc = `${details.key}: ${details.checked ? 'checked ✓' : 'unchecked'}`
 
         return (
-          <div key={log.id || i} style={{
-            padding: '10px 16px',
-            borderBottom: '1px solid var(--border)',
-            display: 'grid',
-            gridTemplateColumns: '150px 1fr auto',
-            alignItems: 'start',
-            gap: 12,
-            background: 'var(--bg2)',
-          }}>
-            <div style={{ fontSize: 11, color: 'var(--text4)', paddingTop: 1 }}>
-              {new Date(log.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+          <div key={log.id || i} className="changelog-row">
+            <div className="cl-avatar" style={{ background: avatarCol }}>
+              {userAvatar(userName)}
             </div>
-            <div>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>
-                {ACTION_LABELS[log.action] || log.action}
-              </span>
-              {desc && (
-                <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 6 }}>{desc}</span>
-              )}
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--accent2)', fontWeight: 500, textAlign: 'right', whiteSpace: 'nowrap' }}>
-              {log.user_name || log.user_email || '—'}
+            <div className="cl-body">
+              <div className="cl-meta">
+                <span className="cl-username" style={{ color: avatarCol }}>{userName}</span>
+                <span className="cl-time">
+                  {new Date(log.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+              <div className="cl-action">
+                <span className="cl-action-label">{ACTION_LABELS[log.action] || log.action}</span>
+                {desc && <span className="cl-action-desc">{desc}</span>}
+              </div>
             </div>
           </div>
         )
