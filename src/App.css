@@ -1240,3 +1240,97 @@
 ══════════════════════════════════════════ */
 .spin { animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ══════════════════════════════════════════
+   GUEST VIEW
+══════════════════════════════════════════ */
+.guest-loading {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 100vh; background: #111827; text-align: center; padding: 24px;
+}
+.guest-beacon-logo {
+  width: 44px; height: 44px; border-radius: 11px;
+  background: linear-gradient(135deg, #F59E0B, #D97706);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 16px rgba(245,158,11,0.4);
+}
+
+.guest-shell {
+  display: flex; flex-direction: column; min-height: 100vh; background: var(--bg);
+}
+
+/* Top banner */
+.guest-banner {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 24px; background: #111827; border-bottom: 1px solid rgba(255,255,255,0.08);
+  position: sticky; top: 0; z-index: 50;
+}
+.guest-beacon-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: linear-gradient(135deg, #F59E0B, #D97706);
+  padding: 4px 10px; border-radius: 6px;
+  font-size: 12px; font-weight: 800; color: #111827;
+  font-family: var(--font-head); letter-spacing: 0.04em;
+}
+.guest-view-label {
+  font-size: 12px; color: #6B7280; font-weight: 500;
+}
+.guest-signin-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: #4F46E5; color: #fff; border: none; padding: 7px 16px;
+  border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: background 0.14s; white-space: nowrap;
+}
+.guest-signin-btn:hover { background: #4338CA; }
+
+/* Release header section */
+.guest-header {
+  padding: 20px 24px 0; background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 12px;
+}
+.guest-release-title {
+  font-size: 20px; font-weight: 800; color: var(--text);
+  font-family: var(--font-head); margin: 0;
+}
+.guest-stats {
+  display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+  padding: 12px 0; border-top: 1px solid var(--border);
+}
+
+/* Content area */
+.guest-content {
+  flex: 1; padding: 20px 24px; max-width: 900px; width: 100%; margin: 0 auto;
+  display: flex; flex-direction: column; gap: 16px;
+}
+
+/* Read-only test case row */
+.guest-tc-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+  pointer-events: none;
+}
+.guest-tc-row:last-child { border-bottom: none; }
+.guest-status-pill {
+  margin-left: auto; font-size: 11.5px; font-weight: 700;
+  padding: 3px 10px; border-radius: 5px; white-space: nowrap; flex-shrink: 0;
+}
+
+/* CTA strip at bottom */
+.guest-cta {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  background: var(--accent-bg); border: 1px solid var(--accent-border);
+  border-radius: 8px; padding: 14px 18px;
+  font-size: 13px; color: var(--accent); font-weight: 500;
+}
+
+/* Read-only link in checklist */
+.guest-link {
+  font-size: 12px; color: var(--accent); word-break: break-all; text-decoration: underline;
+}
+/* Read-only notes block */
+.guest-notes {
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 6px; padding: 8px 12px; font-size: 12.5px;
+  color: var(--text2); line-height: 1.6; white-space: pre-wrap;
+}
